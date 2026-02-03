@@ -21,10 +21,9 @@ app.get('/swagger', (req, res) => {
 app.use('/api', routes);
 
 // Database connection and server start
-db.sequelize.authenticate()
+db.sequelize.sync()
   .then(() => {
-    console.log('Database connection established successfully.');
-    // Only verify connection, migrations should be run via CLI or specialized script
+    console.log('Database connected and synced successfully.');
     app.listen(PORT, () => {
       console.log(`Server is running on port ${PORT}`);
     });
