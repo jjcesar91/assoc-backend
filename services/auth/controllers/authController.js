@@ -1,0 +1,62 @@
+const { User } = require('../models');
+const jwt = require('jsonwebtoken');
+
+const generateTokens = (user) => {
+    const accessToken = jwt.sign(
+        { id: user.id, username: user.username, role: user.role },
+        process.env.JWT_SECRET || 'your_jwt_secret',
+        { expiresIn: '15m' }
+    );
+    const refreshToken = jwt.sign(
+        { id: user.id },
+        process.env.JWT_REFRESH_SECRET || 'your_refresh_secret',
+        { expiresIn: '7d' }
+    );
+    return { accessToken, refreshToken };
+};
+
+exports.register = async (req, res) => {
+    try {
+        const { username, email, password } = req.body;
+        const user = await User.create({ username, email, password });
+        const tokens = generateTokens(user);
+        res.json({ user: { id: user.id, username: user.username, email: user.email }, ...tokens });
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+};
+
+exports.login = async (req, res) => {
+    try {
+        const { email, password } = req.body;
+        const user = await User.findOne({ where: { email } });
+        
+        if (!user || !(await user.validatePassword(password))) {
+            return res.status(401).json({ error: 'Invalid credentials' });
+        }
+
+        const tokens = generateTokens(user);
+        res.json({ user: { id: user.id, username: user.username, role: user.role }, ...tokens });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+exports.refreshToken = async (req, res) => {
+    const { token } = req.body;
+    if (!token) return res.sendStatus(401);
+
+    jwt.verify(token, process.env.JWT_REFRESH_SECRET || 'your_refresh_secret', async (err, decoded) => {
+        if (err) return res.sendStatus(403);
+        
+        const user = await User.findByPk(decoded.id);
+        if (!user) return res.sendStatus(403);
+
+        const tokens = generateTokens(user);
+        res.json(tokens);
+    });
+};
+
+exports.me = async (req, res) => {
+    res.json(req.user);
+}
