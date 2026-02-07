@@ -87,6 +87,42 @@ services:
     networks:
       - app_network
 
+  # --- Users Service ---
+  users_ms:
+    build: ../services/users
+    container_name: users_ms
+    environment:
+      - PORT=3000
+      - DB_HOST=users_db
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - DB_NAME=users_db
+      - SERVICE_NAME=users-service
+    ports:
+      - "3003:3000"
+      - "9231:9229"
+    depends_on:
+      - users_db
+    volumes:
+      - ../services/users:/app
+      - /app/node_modules
+    networks:
+      - app_network
+
+  users_db:
+    image: postgres:13
+    container_name: users_db
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=users_db
+    ports:
+      - "5434:5432"
+    volumes:
+      - users_db_data:/var/lib/postgresql/data
+    networks:
+      - app_network
+
   # --- Frontend ---
   frontend:
     build: ../../frontend
@@ -105,6 +141,7 @@ services:
 volumes:
   template_db_data:
   auth_db_data:
+  users_db_data:
 
 networks:
   app_network:
