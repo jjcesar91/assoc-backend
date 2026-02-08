@@ -10,7 +10,15 @@ class SocioController {
             // (but our model requires user_id).
             // Example: { user_id: 1, nome: 'Mario', cognome: 'Rossi', ... }
             
-            const socio = await Socio.create(req.body);
+            // Handle optional fields: convert empty strings to null to avoid database errors
+            const socioData = { ...req.body };
+            Object.keys(socioData).forEach(key => {
+                if (socioData[key] === '') {
+                    socioData[key] = null;
+                }
+            });
+
+            const socio = await Socio.create(socioData);
             return res.status(201).json(socio);
         } catch (error) {
             console.error('Error creating socio:', error);
@@ -25,7 +33,7 @@ class SocioController {
                 include: [{
                     model: User,
                     as: 'user',
-                    attributes: ['email', 'role', 'username'] 
+                    attributes: ['email', 'role'] 
                 }]
             });
             return res.status(200).json(soci);
@@ -43,7 +51,7 @@ class SocioController {
                 include: [{
                     model: User,
                     as: 'user',
-                    attributes: ['email', 'role', 'username']
+                    attributes: ['email', 'role']
                 }]
             });
             
@@ -62,7 +70,17 @@ class SocioController {
     async updateSocio(req, res) {
         try {
             const { id } = req.params;
-            const [updated] = await Socio.update(req.body, {
+
+            // Handle optional fields: convert empty strings to null to avoid database errors
+            // specifically for dates like scadenza_certificato or data_scadenza_tesseramento
+            const updateData = { ...req.body };
+            Object.keys(updateData).forEach(key => {
+                if (updateData[key] === '') {
+                    updateData[key] = null;
+                }
+            });
+
+            const [updated] = await Socio.update(updateData, {
                 where: { id: id }
             });
 
