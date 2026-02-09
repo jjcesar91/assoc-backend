@@ -1,4 +1,5 @@
 const { Socio, User } = require('../models');
+const { Op } = require('sequelize');
 
 class SocioController {
 
@@ -111,6 +112,59 @@ class SocioController {
             return res.status(404).json({ message: 'Socio not found' });
         } catch (error) {
             console.error('Error deleting socio:', error);
+            return res.status(500).json({ error: error.message });
+        }
+    }
+
+    // Check if email exists
+    async checkEmail(req, res) {
+        try {
+            const { email, excludeId } = req.body;
+            if (!email) {
+                return res.status(400).json({ message: 'Email is required' });
+            }
+
+            const whereClause = { email: email };
+            if (excludeId) {
+                whereClause.id = { [Op.ne]: excludeId };
+            }
+
+            // Check if email exists in Socio
+            const socio = await Socio.findOne({
+                where: whereClause,
+                attributes: ['nome', 'cognome']
+            });
+
+            if (socio) {
+                return res.status(200).json({
+                    exists: true,
+                    nome: socio.nome,
+                    cognome: socio.cognome
+                });
+            }
+
+            // Check in User as fallback
+            const user = await User.findOne({
+                where: { email: email },
+                include: [{ model: Socio, as: 'socioProfile', attributes: ['id'] }]
+            });
+
+            if (user) {
+                // If the user found is linked to the socio we are excluding, it's not a conflict
+                if (excludeId && user.socioProfile && user.socioProfile.id == excludeId) {
+                    return res.status(200).json({ exists: false });
+                }
+
+                return res.status(200).json({
+                    exists: true,
+                    nome: 'Utente',
+                    cognome: 'Registrato'
+                });
+            }
+
+            return res.status(200).json({ exists: false });
+        } catch (error) {
+            console.error('Error checking email:', error);
             return res.status(500).json({ error: error.message });
         }
     }

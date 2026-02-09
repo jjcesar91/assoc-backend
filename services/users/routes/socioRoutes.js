@@ -3,6 +3,7 @@ const router = express.Router();
 const socioController = require('../controllers/socioController');
 
 // Routes for /api/soci
+router.post('/check-email', socioController.checkEmail);
 router.post('/', socioController.createSocio);
 router.get('/', socioController.getAllSoci);
 router.get('/:id', socioController.getSocioById);
