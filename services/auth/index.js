@@ -20,20 +20,23 @@ app.get('/swagger', (req, res) => {
 // Routes
 app.use('/api', routes);
 
-// Database connection and server start
-db.sequelize.sync()
+// Database connection and server start (with forced sync for new columns)
+db.sequelize.sync({ alter: true })
   .then(() => {
     console.log('Database connected and synced successfully.');
 
     // Run seeders after database sync
     const { exec } = require('child_process');
     exec('npx sequelize-cli db:seed:all', (err, stdout, stderr) => {
-      if (err) {
+      if (err) { // Log error but continue
         console.error('Error running seeders:', err);
       } else {
         console.log('Seeders executed successfully:', stdout);
       }
     });
+
+    // Force run specific migration/seed as a check
+    // ...
 
     app.listen(PORT, () => {
       console.log(`Server is running on port ${PORT}`);

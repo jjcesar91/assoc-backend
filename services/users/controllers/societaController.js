@@ -42,6 +42,25 @@ class SocietaController {
             return res.status(500).json({ error: error.message });
         }
     }
+        
+    // Update Societa
+    async updateSocieta(req, res) {
+        try {
+            const { id } = req.params;
+            const societa = await Societa.findByPk(id);
+
+            if (!societa) {
+                return res.status(404).json({ message: 'Societa not found' });
+            }
+
+            // You can add validation here for req.body fields if necessary
+            await societa.update(req.body);
+            return res.status(200).json(societa);
+        } catch (error) {
+            console.error('Error updating societa:', error);
+            return res.status(500).json({ error: error.message });
+        }
+    }
 }
 
 module.exports = new SocietaController();

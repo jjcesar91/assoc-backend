@@ -6,6 +6,7 @@ const societaController = require('../controllers/societaController');
 router.get('/', societaController.getAllSocieta);
 router.post('/', societaController.createSocieta);
 router.get('/:id', societaController.getSocietaById);
+router.put('/:id', societaController.updateSocieta);
 // Additional routes like PUT/DELETE can be added later
 
 module.exports = router;
