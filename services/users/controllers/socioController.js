@@ -1,4 +1,4 @@
-const { Socio, User } = require('../models');
+const { Socio, User, Societa } = require('../models');
 const { Op } = require('sequelize');
 
 class SocioController {
@@ -30,11 +30,20 @@ class SocioController {
     // Get all Soci
     async getAllSoci(req, res) {
         try {
+            const whereClause = {};
+            if (req.query.societa_id) {
+                whereClause.societa_id = req.query.societa_id;
+            }
+
             const soci = await Socio.findAll({
+                where: whereClause,
                 include: [{
                     model: User,
                     as: 'user',
                     attributes: ['email', 'role'] 
+                }, {
+                    model: Societa,
+                    as: 'societa'
                 }]
             });
             return res.status(200).json(soci);
@@ -53,6 +62,9 @@ class SocioController {
                     model: User,
                     as: 'user',
                     attributes: ['email', 'role']
+                }, {
+                    model: Societa,
+                    as: 'societa'
                 }]
             });
             

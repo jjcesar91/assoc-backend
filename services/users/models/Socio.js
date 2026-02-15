@@ -9,6 +9,11 @@ module.exports = (sequelize, DataTypes) => {
         foreignKey: 'user_id',
         as: 'user'
       });
+      // Socio belongs to a Societa
+      Socio.belongsTo(models.Societa, {
+        foreignKey: 'societa_id',
+        as: 'societa'
+      });
     }
   }
   
@@ -21,6 +26,14 @@ module.exports = (sequelize, DataTypes) => {
         key: 'id'
       },
       unique: true // One socio profile per user
+    },
+    societa_id: {
+      type: DataTypes.INTEGER,
+      allowNull: true, // Allow null initially for migration/seeding, but logically required
+      references: {
+        model: 'societa',
+        key: 'id'
+      }
     },
     // Anagrafica Base
     cognome: {
