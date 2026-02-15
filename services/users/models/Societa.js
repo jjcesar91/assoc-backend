@@ -68,6 +68,15 @@ module.exports = (sequelize, DataTypes) => {
     alias_email: {
       type: DataTypes.STRING,
       allowNull: true
+    },
+    tipo_anno_associativo: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      defaultValue: 'solare' // 'solare', 'sportivo', 'personalizzato'
+    },
+    data_inizio_anno_associativo: {
+      type: DataTypes.DATEONLY,
+      allowNull: true
     }
   }, {
     sequelize,
