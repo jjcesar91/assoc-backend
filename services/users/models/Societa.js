@@ -72,10 +72,10 @@ module.exports = (sequelize, DataTypes) => {
     tipo_anno_associativo: {
       type: DataTypes.STRING,
       allowNull: false,
-      defaultValue: 'solare' // 'solare', 'sportivo', 'personalizzato'
+      defaultValue: 'solare' // 'solare', 'associativo', 'personalizzato'
     },
     data_inizio_anno_associativo: {
-      type: DataTypes.DATEONLY,
+      type: DataTypes.STRING(5), // "DD-MM"
       allowNull: true
     }
   }, {
