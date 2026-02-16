@@ -69,6 +69,27 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.STRING,
       allowNull: true
     },
+    smtp_host: {
+      type: DataTypes.STRING,
+      allowNull: true
+    },
+    smtp_port: {
+      type: DataTypes.INTEGER,
+      allowNull: true
+    },
+    smtp_user: {
+      type: DataTypes.STRING,
+      allowNull: true
+    },
+    smtp_password: {
+      type: DataTypes.STRING,
+      allowNull: true
+    },
+    smtp_secure: {
+      type: DataTypes.BOOLEAN,
+      allowNull: true,
+      defaultValue: false
+    },
     tipo_anno_associativo: {
       type: DataTypes.STRING,
       allowNull: false,
