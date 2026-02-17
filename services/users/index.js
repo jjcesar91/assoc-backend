@@ -12,6 +12,9 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Serve static files from uploads directory
+app.use('/uploads', express.static('/app/uploads'));
+
 // Swagger Placeholder
 app.get('/swagger', (req, res) => {
     res.json({ message: "Swagger documentation will be available here" });

@@ -61,6 +61,32 @@ class SocietaController {
             return res.status(500).json({ error: error.message });
         }
     }
+
+    // Upload Logo
+    async uploadLogo(req, res) {
+        try {
+            const { id } = req.params;
+            const societa = await Societa.findByPk(id);
+
+            if (!societa) {
+                return res.status(404).json({ message: 'Societa not found' });
+            }
+
+            if (!req.file) {
+                 return res.status(400).json({ message: 'No file uploaded' });
+            }
+
+            const logoPath = `uploads/${req.file.filename}`;
+            
+            societa.logo_path = logoPath;
+            await societa.save();
+
+            return res.status(200).json({ message: 'Logo uploaded successfully', logo_path: logoPath });
+        } catch (error) {
+             console.error('Error uploading logo:', error);
+             return res.status(500).json({ error: error.message });
+        }
+    }
 }
 
 module.exports = new SocietaController();

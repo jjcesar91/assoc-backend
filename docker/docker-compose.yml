@@ -106,6 +106,7 @@ services:
     volumes:
       - ../services/users:/app
       - /app/node_modules
+      - uploads_data:/app/uploads
     networks:
       - app_network
 
@@ -120,6 +121,43 @@ services:
       - "5434:5432"
     volumes:
       - users_db_data:/var/lib/postgresql/data
+    networks:
+      - app_network
+
+  # --- Documents Service ---
+  documents_ms:
+    build: ../services/documents
+    container_name: documents_ms
+    environment:
+      - PORT=3000
+      - DB_HOST=documents_db
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - DB_NAME=documents_db
+      - SERVICE_NAME=documents-service
+    ports:
+      - "3004:3000"
+      - "9232:9229"
+    depends_on:
+      - documents_db
+    volumes:
+      - ../services/documents:/app
+      - /app/node_modules
+      - uploads_data:/app/uploads
+    networks:
+      - app_network
+
+  documents_db:
+    image: postgres:13
+    container_name: documents_db
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=documents_db
+    ports:
+      - "5435:5432"
+    volumes:
+      - documents_db_data:/var/lib/postgresql/data
     networks:
       - app_network
 
@@ -139,9 +177,11 @@ services:
       - app_network
 
 volumes:
+  uploads_data:
   template_db_data:
   auth_db_data:
   users_db_data:
+  documents_db_data:
 
 networks:
   app_network:

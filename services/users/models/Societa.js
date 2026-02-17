@@ -53,6 +53,18 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.STRING,
       allowNull: true
     },
+    logo_path: {
+      type: DataTypes.STRING,
+      allowNull: true
+    },
+    footer_text: {
+      type: DataTypes.TEXT,
+      allowNull: true
+    },
+    email_text: {
+      type: DataTypes.TEXT,
+      allowNull: true
+    },
     cognome_rappr_legale: {
       type: DataTypes.STRING,
       allowNull: true
