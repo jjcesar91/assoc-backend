@@ -53,8 +53,13 @@ class SocietaController {
                 return res.status(404).json({ message: 'Societa not found' });
             }
 
-            // You can add validation here for req.body fields if necessary
-            await societa.update(req.body);
+            // Explicitly allow the new fields update
+            const { denominazione, codice_fiscale, partita_iva, codice_sdi, pec, email, telefono, indirizzo, comune, cap, cognome_rappr_legale, nome_rappr_legale, alias_sms, alias_email, tipo_associazione, associazione_riferimento } = req.body;
+            
+            await societa.update({
+                denominazione, codice_fiscale, partita_iva, codice_sdi, pec, email, telefono, indirizzo, comune, cap, cognome_rappr_legale, nome_rappr_legale, alias_sms, alias_email, tipo_associazione, associazione_riferimento
+            });
+            
             return res.status(200).json(societa);
         } catch (error) {
             console.error('Error updating societa:', error);

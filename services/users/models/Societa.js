@@ -102,6 +102,14 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: true,
       defaultValue: false
     },
+    tipo_associazione: {
+      type: DataTypes.STRING,
+      allowNull: true
+    },
+    associazione_riferimento: {
+      type: DataTypes.STRING,
+      allowNull: true
+    },
     tipo_anno_associativo: {
       type: DataTypes.STRING,
       allowNull: false,
