@@ -9,6 +9,11 @@ module.exports = (sequelize, DataTypes) => {
         foreignKey: 'societa_id',
         as: 'soci'
       });
+      // Societa has many Affiliazioni
+      Societa.hasMany(models.SocietaAffiliazioni, {
+        foreignKey: 'societa_id',
+        as: 'affiliazioni'
+      });
     }
   }
 
@@ -101,14 +106,6 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.BOOLEAN,
       allowNull: true,
       defaultValue: false
-    },
-    tipo_associazione: {
-      type: DataTypes.STRING,
-      allowNull: true
-    },
-    associazione_riferimento: {
-      type: DataTypes.STRING,
-      allowNull: true
     },
     tipo_anno_associativo: {
       type: DataTypes.STRING,

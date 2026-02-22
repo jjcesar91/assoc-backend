@@ -1,11 +1,16 @@
-const { Societa } = require('../models');
+const { Societa, SocietaAffiliazioni } = require('../models');
 
 class SocietaController {
 
     // Get all Societa
     async getAllSocieta(req, res) {
         try {
-            const societa = await Societa.findAll();
+            const societa = await Societa.findAll({
+                include: [{
+                    model: SocietaAffiliazioni,
+                    as: 'affiliazioni'
+                }]
+            });
             return res.status(200).json(societa);
         } catch (error) {
             console.error('Error fetching societa:', error);
@@ -17,7 +22,12 @@ class SocietaController {
     async getSocietaById(req, res) {
         try {
             const { id } = req.params;
-            const societa = await Societa.findByPk(id);
+            const societa = await Societa.findByPk(id, {
+                include: [{
+                    model: SocietaAffiliazioni,
+                    as: 'affiliazioni'
+                }]
+            });
             
             if (!societa) {
                 return res.status(404).json({ message: 'Societa not found' });
@@ -45,23 +55,52 @@ class SocietaController {
         
     // Update Societa
     async updateSocieta(req, res) {
+        let transaction;
         try {
+            transaction = await Societa.sequelize.transaction();
             const { id } = req.params;
-            const societa = await Societa.findByPk(id);
+            const societa = await Societa.findByPk(id, { transaction });
 
             if (!societa) {
+                await transaction.rollback();
                 return res.status(404).json({ message: 'Societa not found' });
             }
 
             // Explicitly allow the new fields update
-            const { denominazione, codice_fiscale, partita_iva, codice_sdi, pec, email, telefono, indirizzo, comune, cap, cognome_rappr_legale, nome_rappr_legale, alias_sms, alias_email, tipo_associazione, associazione_riferimento } = req.body;
+            const { denominazione, codice_fiscale, partita_iva, codice_sdi, pec, email, telefono, indirizzo, comune, cap, cognome_rappr_legale, nome_rappr_legale, alias_sms, alias_email, affiliazioni } = req.body;
             
             await societa.update({
-                denominazione, codice_fiscale, partita_iva, codice_sdi, pec, email, telefono, indirizzo, comune, cap, cognome_rappr_legale, nome_rappr_legale, alias_sms, alias_email, tipo_associazione, associazione_riferimento
-            });
+                denominazione, codice_fiscale, partita_iva, codice_sdi, pec, email, telefono, indirizzo, comune, cap, cognome_rappr_legale, nome_rappr_legale, alias_sms, alias_email
+            }, { transaction });
+
+            if (affiliazioni && Array.isArray(affiliazioni)) {
+                // Delete existing
+                await SocietaAffiliazioni.destroy({
+                    where: { societa_id: id },
+                    transaction
+                });
+
+                // Add new
+                if (affiliazioni.length > 0) {
+                    const newAffiliazioni = affiliazioni.map(a => ({
+                        societa_id: id,
+                        tipo: a.tipo,
+                        nome: a.nome
+                    }));
+                    await SocietaAffiliazioni.bulkCreate(newAffiliazioni, { transaction });
+                }
+            }
             
-            return res.status(200).json(societa);
+            await transaction.commit();
+
+            // Refresh to return full object with affiliations
+            const updatedSocieta = await Societa.findByPk(id, {
+                include: [{ model: SocietaAffiliazioni, as: 'affiliazioni' }]
+            });
+
+            return res.status(200).json(updatedSocieta);
         } catch (error) {
+            if (transaction) await transaction.rollback();
             console.error('Error updating societa:', error);
             return res.status(500).json({ error: error.message });
         }
