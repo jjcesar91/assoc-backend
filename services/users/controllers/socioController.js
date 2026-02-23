@@ -11,8 +11,21 @@ class SocioController {
             // (but our model requires user_id).
             // Example: { user_id: 1, nome: 'Mario', cognome: 'Rossi', ... }
             
-            // Handle optional fields: convert empty strings to null to avoid database errors
             const socioData = { ...req.body };
+
+            // Check duplicate Codice Fiscale
+            if (socioData.codice_fiscale) {
+                const existingSocio = await Socio.findOne({
+                    where: { codice_fiscale: socioData.codice_fiscale }
+                });
+                if (existingSocio) {
+                    return res.status(400).json({ 
+                        error: `E' già presente un socio con il codice fiscale ${socioData.codice_fiscale}. Verificare i dati inseriti.` 
+                    });
+                }
+            }
+
+            // Handle optional fields: convert empty strings to null to avoid database errors
             Object.keys(socioData).forEach(key => {
                 if (socioData[key] === '') {
                     socioData[key] = null;
@@ -23,6 +36,9 @@ class SocioController {
             return res.status(201).json(socio);
         } catch (error) {
             console.error('Error creating socio:', error);
+            if (error.name === 'SequelizeUniqueConstraintError') {
+                 return res.status(400).json({ error: 'Errore: Codice fiscale o altro campo univoco duplicato.' });
+            }
             return res.status(500).json({ error: error.message });
         }
     }
