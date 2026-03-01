@@ -67,10 +67,20 @@ class SocietaController {
             }
 
             // Explicitly allow the new fields update
-            const { denominazione, codice_fiscale, partita_iva, codice_sdi, pec, email, telefono, indirizzo, comune, cap, cognome_rappr_legale, nome_rappr_legale, alias_sms, alias_email, affiliazioni } = req.body;
+            const {    
+                denominazione, codice_fiscale, partita_iva, codice_sdi, pec, email, telefono, 
+                indirizzo, comune, cap, cognome_rappr_legale, nome_rappr_legale, 
+                alias_sms, alias_email, affiliazioni,
+                tipo_anno_associativo, data_inizio_anno_associativo,
+                footer_text, email_text // Added template fields
+            } = req.body;
             
             await societa.update({
-                denominazione, codice_fiscale, partita_iva, codice_sdi, pec, email, telefono, indirizzo, comune, cap, cognome_rappr_legale, nome_rappr_legale, alias_sms, alias_email
+                denominazione, codice_fiscale, partita_iva, codice_sdi, pec, email, telefono, 
+                indirizzo, comune, cap, cognome_rappr_legale, nome_rappr_legale, 
+                alias_sms, alias_email,
+                tipo_anno_associativo, data_inizio_anno_associativo,
+                footer_text, email_text // Added template fields
             }, { transaction });
 
             if (affiliazioni && Array.isArray(affiliazioni)) {

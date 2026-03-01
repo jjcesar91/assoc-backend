@@ -1,7 +1,59 @@
-const { Socio, User, Societa } = require('../models');
+const { Socio, User, Societa, Comunicazione } = require('../models');
 const { Op } = require('sequelize');
 
 class SocioController {
+
+    // Create a new Communication
+    async createComunicazione(req, res) {
+        try {
+            const socio_id = req.params.id; // From URL params
+            const { tipo, oggetto, testo } = req.body;
+
+            // Basic validation
+            if (!socio_id || !tipo || !testo) {
+                return res.status(400).json({ error: 'Campi obbligatori mancanti (tipo, testo)' });
+            }
+
+            // Implementazione demo
+            const comunicazione = await Comunicazione.create({
+                socio_id,
+                tipo,
+                oggetto: tipo === 'EMAIL' ? oggetto : null,
+                testo,
+                isInviato: false, 
+                mittente_email: 'demo@example.com',
+                mittente_nome: 'Utente Demo',
+                mittente_smtp_params: { host: 'smtp.demo.com', port: 587 },
+                data_invio: new Date()
+            });
+
+            return res.status(201).json(comunicazione);
+        } catch (error) {
+            console.error('Error creating comunicazione:', error);
+            return res.status(500).json({ error: error.message });
+        }
+    }
+
+    // Get all Communications for a Socio
+    async getComunicazioni(req, res) {
+        try {
+            const socio_id = req.params.id; // From URL params
+            
+            if (!socio_id) {
+                return res.status(400).json({ error: 'ID socio mancante' });
+            }
+
+            const comunicazioni = await Comunicazione.findAll({
+                where: { socio_id },
+                order: [['createdAt', 'DESC']]
+            });
+
+            return res.status(200).json(comunicazioni);
+        } catch (error) {
+            console.error('Error fetching comunicazioni:', error);
+            return res.status(500).json({ error: error.message });
+        }
+    }
 
     // Create a new Socio
     async createSocio(req, res) {
@@ -13,14 +65,18 @@ class SocioController {
             
             const socioData = { ...req.body };
 
-            // Check duplicate Codice Fiscale
-            if (socioData.codice_fiscale) {
+            // Check duplicate Codice Fiscale within the same Societa
+            if (socioData.codice_fiscale && socioData.societa_id) {
                 const existingSocio = await Socio.findOne({
-                    where: { codice_fiscale: socioData.codice_fiscale }
+                    where: { 
+                        codice_fiscale: socioData.codice_fiscale,
+                        societa_id: socioData.societa_id
+                    }
                 });
+
                 if (existingSocio) {
                     return res.status(400).json({ 
-                        error: `E' già presente un socio con il codice fiscale ${socioData.codice_fiscale}. Verificare i dati inseriti.` 
+                        error: `E' già presente un socio con il codice fiscale ${socioData.codice_fiscale} in questa società. Verificare i dati inseriti.` 
                     });
                 }
             }
