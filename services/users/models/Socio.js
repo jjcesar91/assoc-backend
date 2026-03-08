@@ -14,6 +14,11 @@ module.exports = (sequelize, DataTypes) => {
         foreignKey: 'societa_id',
         as: 'societa'
       });
+      // Socio has many Iscrizioni
+      Socio.hasMany(models.Iscrizione, {
+        foreignKey: 'socio_id',
+        as: 'iscrizioni'
+      });
     }
   }
   
@@ -113,6 +118,10 @@ module.exports = (sequelize, DataTypes) => {
     
     // Membership Info
     scadenza_certificato: {
+      type: DataTypes.DATEONLY,
+      allowNull: true
+    },
+    data_ammissione: { // Data di prima iscrizione come socio (libro soci)
       type: DataTypes.DATEONLY,
       allowNull: true
     },

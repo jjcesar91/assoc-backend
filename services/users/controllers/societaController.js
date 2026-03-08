@@ -46,6 +46,40 @@ class SocietaController {
             const societaData = { ...req.body };
             // Simple validation or cleanup could happen here
             const societa = await Societa.create(societaData);
+
+             // Create default modules for the new society
+             try {
+                const defaultModules = [
+                    {
+                        descrizione: 'MODULO ISCRIZIONE',
+                        testo: '',
+                        htmlContent: '',
+                        societa_id: societa.id
+                    },
+                    {
+                        descrizione: 'INFORMATIVA PRIVACY',
+                        testo: '',
+                        htmlContent: '',
+                        societa_id: societa.id
+                    }
+                ];
+
+                // Use the internal docker service name and port
+                const documentsServiceUrl = process.env.DOCUMENTS_SERVICE_URL || 'http://documents_ms:3000';
+                
+                await fetch(`${documentsServiceUrl}/api/moduli`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(defaultModules)
+                });
+            } catch (moduleError) {
+                // Log error but don't fail the society creation, or maybe we should?
+                // For now, just log it as the society is already created.
+                console.error('Error creating default modules:', moduleError);
+            }
+
             return res.status(201).json(societa);
         } catch (error) {
             console.error('Error creating societa:', error);

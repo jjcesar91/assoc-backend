@@ -1,5 +1,42 @@
-const { Socio, User, Societa, Comunicazione } = require('../models');
+const { Socio, User, Societa, Comunicazione, Iscrizione } = require('../models');
 const { Op } = require('sequelize');
+
+// Helper to calculate fiscal year
+function calculateAnnoContabile(date, societa) {
+    const d = new Date(date);
+    const year = d.getFullYear();
+    const month = d.getMonth() + 1; // 1-12
+    const day = d.getDate();
+
+    if (societa.tipo_anno_associativo === 'solare') {
+        return year;
+    } else if (societa.tipo_anno_associativo === 'associativo') {
+        // Begins Sept 1st.
+        // If date < Sept 1st, it belongs to previous year (e.g. 2024-05-01 is 2023/2024 -> 2023)
+        // If date >= Sept 1st, it starts new year (e.g. 2024-09-01 is 2024/2025 -> 2024)
+        if (month < 9) return year - 1;
+        return year;
+    } else if (societa.tipo_anno_associativo === 'personalizzato' && societa.data_inizio_anno_associativo) {
+        let cDay = 1, cMonth = 1;
+        // Format assumption: 'DD-MM' or 'MM-DD'? 
+        // Based on AnnoContabile.jsx: "setCustomDay(parts[0])" -> it seems 'DD-MM'
+        const parts = societa.data_inizio_anno_associativo.split('-');
+        if (parts.length === 2) {
+             cDay = parseInt(parts[0], 10);
+             cMonth = parseInt(parts[1], 10);
+        }
+        
+        // If current date is BEFORE the start date of the 'fiscal year' in this calendar year
+        // e.g. Start 01-04 (April 1st). Current 01-03 (March 1st).
+        // March 1st 2024 belongs to Fiscal Year 2023 (started April 1 2023).
+        
+        if (month < cMonth || (month === cMonth && day < cDay)) {
+            return year - 1;
+        }
+        return year;
+    }
+    return year;
+}
 
 class SocioController {
 
@@ -116,6 +153,9 @@ class SocioController {
                 }, {
                     model: Societa,
                     as: 'societa'
+                }, {
+                    model: Iscrizione,
+                    as: 'iscrizioni'
                 }]
             });
             return res.status(200).json(soci);
@@ -137,6 +177,9 @@ class SocioController {
                 }, {
                     model: Societa,
                     as: 'societa'
+                }, {
+                    model: Iscrizione,
+                    as: 'iscrizioni'
                 }]
             });
             
@@ -252,6 +295,107 @@ class SocioController {
             return res.status(500).json({ error: error.message });
         }
     }
+
+    // Create a new Iscrizione/Renewal
+    async createIscrizione(req, res) {
+        try {
+            const socio_id = req.params.id;
+            const { data_iscrizione, tipo } = req.body;
+            
+            const socio = await Socio.findByPk(socio_id);
+            if (!socio) return res.status(404).json({ error: 'Socio not found' });
+            
+            const societa = await Societa.findByPk(socio.societa_id);
+            if (!societa) return res.status(404).json({ error: 'Societa not found' });
+            
+            // Calculate fiscal year based on date
+            // Note: we can reuse this logic if needed elsewhere
+            let d = new Date(data_iscrizione);
+            if (isNaN(d.getTime())) {
+                d = new Date(); // Use today if invalid
+            }
+            
+            const year = d.getFullYear();
+            const month = d.getMonth() + 1;
+            const day = d.getDate();
+            
+            let anno = year;
+            
+            if (societa.tipo_anno_associativo === 'associativo') {
+                if (month < 9) anno = year - 1;
+            } else if (societa.tipo_anno_associativo === 'personalizzato' && societa.data_inizio_anno_associativo) {
+                const parts = societa.data_inizio_anno_associativo.split('-');
+                if (parts.length === 2) {
+                     const cDay = parseInt(parts[0], 10);
+                     const cMonth = parseInt(parts[1], 10);
+                     if (month < cMonth || (month === cMonth && day < cDay)) {
+                         anno = year - 1;
+                     }
+                }
+            }
+            
+            // Check if already exists for this year?
+            let iscrizione = await Iscrizione.findOne({ where: { socio_id, anno } });
+            
+            if (iscrizione) {
+               iscrizione.data_iscrizione = data_iscrizione;
+               iscrizione.tipo = tipo || iscrizione.tipo;
+               await iscrizione.save();
+            } else {
+               iscrizione = await Iscrizione.create({
+                   socio_id,
+                   anno,
+                   data_iscrizione,
+                   tipo
+               });
+            }
+            
+            return res.json({ iscrizione, status: 'ISCRITTO', anno });
+
+        } catch (e) {
+            console.error(e);
+            return res.status(500).json({ error: e.message });
+        }
+    }
+
+    // Get Iscrizioni
+    async getIscrizioni(req, res) {
+         try {
+            const socio_id = req.params.id;
+            const iscrizioni = await Iscrizione.findAll({ where: { socio_id }, order: [['anno', 'DESC']] });
+            return res.json(iscrizioni);
+        } catch (e) {
+            console.error(e);
+            return res.status(500).json({ error: e.message });
+        }
+    }
+
+    // Revoke Iscrizione
+    async deleteIscrizione(req, res) {
+        try {
+            const socio_id = req.params.id;
+            const { anno } = req.body; 
+
+            if (!anno) {
+                return res.status(400).json({ error: 'Anno mancante' });
+            }
+
+            const deleted = await Iscrizione.destroy({
+                where: { socio_id, anno }
+            });
+
+            if (deleted) {
+                 return res.json({ status: 'REVOCATO', anno });
+            } else {
+                 return res.status(404).json({ error: 'Iscrizione non trovata' });
+            }
+        } catch (e) {
+            console.error(e);
+            return res.status(500).json({ error: e.message });
+        }
+    }
+
 }
 
 module.exports = new SocioController();
+

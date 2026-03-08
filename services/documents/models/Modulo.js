@@ -16,7 +16,8 @@ module.exports = (sequelize, DataTypes) => {
   Modulo.init({
     descrizione: DataTypes.STRING,
     testo: DataTypes.TEXT,
-    htmlContent: DataTypes.TEXT
+    htmlContent: DataTypes.TEXT,
+    societa_id: DataTypes.INTEGER
   }, {
     sequelize,
     modelName: 'Modulo',
