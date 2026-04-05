@@ -1,8 +1,17 @@
 const { Product } = require('../models');
 
+// Convert empty strings to null to avoid type errors on INTEGER/BOOLEAN fields
+function sanitize(data) {
+    const cleaned = { ...data };
+    Object.keys(cleaned).forEach(key => {
+        if (cleaned[key] === '') cleaned[key] = null;
+    });
+    return cleaned;
+}
+
 exports.createProduct = async (req, res) => {
     try {
-        const product = await Product.create(req.body);
+        const product = await Product.create(sanitize(req.body));
         res.status(201).json(product);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -35,7 +44,7 @@ exports.getProductById = async (req, res) => {
 
 exports.updateProduct = async (req, res) => {
     try {
-        const [updated] = await Product.update(req.body, {
+        const [updated] = await Product.update(sanitize(req.body), {
             where: { id: req.params.id }
         });
         if (updated) {

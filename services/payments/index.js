@@ -21,7 +21,7 @@ app.get('/swagger', (req, res) => {
 app.use('/api', routes);
 
 // Database connection and server start
-db.sequelize.sync()
+db.sequelize.sync({ alter: true })
   .then(() => {
     console.log('Database connected and synced successfully.');
     app.listen(PORT, () => {

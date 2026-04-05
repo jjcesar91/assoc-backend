@@ -19,7 +19,7 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true // Imposto a true temporaneamente per i dati vecchi, cambialo in false se ritieni
     },
     type: {
-        type: DataTypes.ENUM('generic', 'periodic_quota', 'subscription', 'inscription', 'schedule'),
+        type: DataTypes.ENUM('generic', 'subscription', 'quota_associativa', 'tesseramento'),
         allowNull: false
     },
     description: {

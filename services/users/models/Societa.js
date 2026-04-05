@@ -115,6 +115,11 @@ module.exports = (sequelize, DataTypes) => {
     data_inizio_anno_associativo: {
       type: DataTypes.STRING(5), // "DD-MM"
       allowNull: true
+    },
+    quota_tesseramento_unico: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false
     }
   }, {
     sequelize,
