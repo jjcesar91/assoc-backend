@@ -120,6 +120,11 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.BOOLEAN,
       allowNull: false,
       defaultValue: false
+    },
+    tipo_associazione: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      defaultValue: 'ASD'
     }
   }, {
     sequelize,

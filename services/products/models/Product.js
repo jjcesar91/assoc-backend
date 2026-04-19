@@ -49,6 +49,7 @@ module.exports = (sequelize, DataTypes) => {
     // Specific fields
     periodicity: DataTypes.STRING, // periodic_quota
     duration: DataTypes.STRING, // subscription
+    giorniAvvisoScadenza: DataTypes.INTEGER, // subscription
     unlimitedEntries: DataTypes.BOOLEAN, // subscription
     numEntries: DataTypes.INTEGER, // subscription
     season: DataTypes.STRING, // inscription, schedule

@@ -20,8 +20,10 @@ exports.createProduct = async (req, res) => {
 
 exports.getAllProducts = async (req, res) => {
     try {
-        const { societaId } = req.query;
-        const whereClause = societaId ? { societaId } : {};
+        const { societaId, type } = req.query;
+        const whereClause = {};
+        if (societaId) whereClause.societaId = societaId;
+        if (type) whereClause.type = type;
         const products = await Product.findAll({ where: whereClause });
         res.status(200).json(products);
     } catch (error) {

@@ -83,6 +83,12 @@ exports.getAll = async (req, res) => {
         } else if (codice_fiscale) {
             where.codice_fiscale = { [Op.iLike]: codice_fiscale };
         }
+        if (req.query.numero_ricevuta) {
+            where.numero_ricevuta = req.query.numero_ricevuta;
+        }
+        if (req.query.product_id) {
+            where.product_id = req.query.product_id;
+        }
         const payments = await Payment.findAll({ where });
         res.json(payments);
     } catch (err) {
@@ -93,15 +99,18 @@ exports.getAll = async (req, res) => {
 
 exports.create = async (req, res) => {
     try {
-        const body = { ...req.body };
+        const { items, emetti_ricevuta, anno_ricevuta, ...commonFields } = req.body;
 
-        if (body.emetti_ricevuta === 'SI' && body.societa_id) {
-            // Recupera la configurazione dell'anno associativo dalla società
+        let progressivo_stagione = null;
+        let numero_ricevuta = null;
+
+        if (emetti_ricevuta === 'SI' && commonFields.societa_id) {
+            const targetAnno = anno_ricevuta ? parseInt(anno_ricevuta, 10) : null;
             let tipo = 'solare';
             let dataInizio = '01-01';
             try {
                 const usersUrl = process.env.USERS_SERVICE_URL || 'http://users_ms:3000';
-                const socRes = await fetch(`${usersUrl}/api/societa/${body.societa_id}`);
+                const socRes = await fetch(`${usersUrl}/api/societa/${commonFields.societa_id}`);
                 if (socRes.ok) {
                     const societa = await socRes.json();
                     tipo = societa.tipo_anno_associativo || 'solare';
@@ -111,24 +120,42 @@ exports.create = async (req, res) => {
                 console.error('Impossibile recuperare dati societa, uso tipo solare:', e.message);
             }
 
-            const annoStartStr = getAnnoStart(tipo, dataInizio);
+            const annoStartStr = getAnnoStart(tipo, dataInizio, targetAnno);
+            const annoEndStr = getAnnoEnd(tipo, dataInizio, targetAnno);
 
-            // Trova il progressivo più alto nell'anno associativo corrente per questa società
             const lastPayment = await Payment.findOne({
                 where: {
-                    societa_id: body.societa_id,
+                    societa_id: commonFields.societa_id,
                     progressivo_stagione: { [Op.not]: null },
-                    data_ricevuta: { [Op.gte]: annoStartStr }
+                    data_ricevuta: { [Op.gte]: annoStartStr, [Op.lt]: annoEndStr }
                 },
                 order: [['progressivo_stagione', 'DESC']]
             });
 
             const nextProgressivo = lastPayment ? (lastPayment.progressivo_stagione + 1) : 1;
-            body.progressivo_stagione = nextProgressivo;
-            body.numero_ricevuta = formatNumeroRicevuta(nextProgressivo, tipo, dataInizio, body.data_ricevuta);
+            progressivo_stagione = nextProgressivo;
+            numero_ricevuta = formatNumeroRicevuta(nextProgressivo, tipo, dataInizio, commonFields.data_ricevuta);
         }
 
-        const newPayment = await Payment.create(body);
+        if (Array.isArray(items) && items.length > 0) {
+            // Multi-item: un record Payment per voce del carrello, tutti condividono numero_ricevuta
+            const created = await Promise.all(
+                items.map(item => Payment.create({
+                    ...commonFields,
+                    ...item,
+                    progressivo_stagione,
+                    numero_ricevuta,
+                }))
+            );
+            return res.status(201).json(created);
+        }
+
+        // Fallback legacy: singolo payment dall'intero body
+        const newPayment = await Payment.create({
+            ...commonFields,
+            progressivo_stagione,
+            numero_ricevuta,
+        });
         res.status(201).json(newPayment);
     } catch (err) {
         console.error(err);

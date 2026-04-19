@@ -40,8 +40,15 @@ module.exports = (sequelize, DataTypes) => {
     utente_id: DataTypes.INTEGER,
     utente_nome: DataTypes.STRING, // to store the operator name easily
     socio_id: DataTypes.INTEGER, // FK to soci table (for direct lookup)
+    fornitore_id: DataTypes.INTEGER, // FK to fornitori table
+    product_id: DataTypes.INTEGER, // FK to Products table (direct product reference)
     data_inizio_abbonamento: DataTypes.DATEONLY, // periodo abbonamento (inizio)
-    data_scadenza_abbonamento: DataTypes.DATEONLY  // periodo abbonamento (scadenza)
+    data_scadenza_abbonamento: DataTypes.DATEONLY,  // periodo abbonamento (scadenza)
+    periodicity_tesseramento: DataTypes.STRING, // 'anno_solare' | 'anno_associativo' per prodotti di tipo tesseramento
+    gruppo_id: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+    },
   }, {
     sequelize,
     modelName: 'Payment',

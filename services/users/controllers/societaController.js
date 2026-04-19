@@ -80,6 +80,36 @@ class SocietaController {
                 console.error('Error creating default modules:', moduleError);
             }
 
+            // Create default CASSA account for the new society
+            try {
+                const paymentsServiceUrl = process.env.PAYMENTS_SERVICE_URL || 'http://payments_ms:3000';
+                await fetch(`${paymentsServiceUrl}/api/conti`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        descrizione: 'CASSA',
+                        modalita_pagamento: 'Contanti',
+                        societa_id: societa.id
+                    })
+                });
+            } catch (contoError) {
+                console.error('Error creating default CASSA account:', contoError);
+            }
+
+            // Create default APS groups if tipo_associazione is APS
+            if (societaData.tipo_associazione === 'APS') {
+                try {
+                    const paymentsServiceUrl = process.env.PAYMENTS_SERVICE_URL || 'http://payments_ms:3000';
+                    await fetch(`${paymentsServiceUrl}/api/gruppi/init-aps`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ societa_id: societa.id }),
+                    });
+                } catch (gruppiError) {
+                    console.error('Error creating default APS groups:', gruppiError);
+                }
+            }
+
             return res.status(201).json(societa);
         } catch (error) {
             console.error('Error creating societa:', error);
@@ -107,7 +137,8 @@ class SocietaController {
                 alias_sms, alias_email, affiliazioni,
                 tipo_anno_associativo, data_inizio_anno_associativo,
                 footer_text, email_text, // Added template fields
-                quota_tesseramento_unico  // Impostazione quota+tesseramento unico
+                quota_tesseramento_unico,  // Impostazione quota+tesseramento unico
+                tipo_associazione  // ASD o APS
             } = req.body;
             
             await societa.update({
@@ -116,7 +147,8 @@ class SocietaController {
                 alias_sms, alias_email,
                 tipo_anno_associativo, data_inizio_anno_associativo,
                 footer_text, email_text, // Added template fields
-                quota_tesseramento_unico  // Impostazione quota+tesseramento unico
+                quota_tesseramento_unico,  // Impostazione quota+tesseramento unico
+                tipo_associazione  // ASD o APS
             }, { transaction });
 
             if (affiliazioni && Array.isArray(affiliazioni)) {

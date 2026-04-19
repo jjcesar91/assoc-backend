@@ -233,6 +233,42 @@ services:
     networks:
       - app_network
 
+  # --- Activities Service ---
+  activities_ms:
+    build: ../services/activities
+    container_name: activities_ms
+    environment:
+      - PORT=3000
+      - DB_HOST=activities_db
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - DB_NAME=activities_db
+      - SERVICE_NAME=activities-service
+    ports:
+      - "3007:3000"
+      - "9235:9229"
+    depends_on:
+      - activities_db
+    volumes:
+      - ../services/activities:/app
+      - /app/node_modules
+    networks:
+      - app_network
+
+  activities_db:
+    image: postgres:13
+    container_name: activities_db
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=activities_db
+    ports:
+      - "5438:5432"
+    volumes:
+      - activities_db_data:/var/lib/postgresql/data
+    networks:
+      - app_network
+
   # --- Frontend ---
   frontend:
     build: ../../frontend
@@ -250,6 +286,7 @@ services:
 
 volumes:
   uploads_data:
+  activities_db_data:
   template_db_data:
   auth_db_data:
   users_db_data:
