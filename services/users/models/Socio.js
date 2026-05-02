@@ -156,6 +156,20 @@ module.exports = (sequelize, DataTypes) => {
     id_badge: {
       type: DataTypes.STRING,
       allowNull: true
+    },
+    // Accesso frontend socio
+    frontend_enabled: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false
+    },
+    frontend_password_plain: {
+      type: DataTypes.STRING,
+      allowNull: true
+    },
+    frontend_user_id: {
+      type: DataTypes.INTEGER,
+      allowNull: true
     }
 
   }, {

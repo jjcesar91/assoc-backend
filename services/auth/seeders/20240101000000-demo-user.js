@@ -16,7 +16,7 @@ module.exports = {
         username: 'demo',
         email: 'demo@example.com',
         password: hashedPassword,
-        role: 'admin',
+        role: 'superuser',
         nome: 'DONATO',
         cognome: 'SALFI',
         telefono: '336382041',
@@ -24,11 +24,12 @@ module.exports = {
         updatedAt: new Date()
       }]);
     } else {
-       console.log('Seeder: Updating existing Demo User to admin and setting profile info...');
+       console.log('Seeder: Updating existing Demo User to superuser and setting profile info...');
        // If user exists, we might want to update it to ensure it has the new fields
        return queryInterface.sequelize.query(
         `UPDATE "Users" SET 
-          role = 'admin', 
+          role = 'superuser', 
+          "societaId" = NULL,
           username = 'demo',
           nome = 'DONATO', 
           cognome = 'SALFI', 

@@ -46,6 +46,25 @@ module.exports = (sequelize, DataTypes) => {
     role: {
       type: DataTypes.STRING,
       defaultValue: 'user'
+    },
+    attivo: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: true
+    },
+    features: {
+      type: DataTypes.JSON,
+      allowNull: true,
+      defaultValue: null   // null = tutte le funzionalità abilitate (nessuna restrizione)
+    },
+    socio_ref_id: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      defaultValue: null   // id del socio nel users-service, solo per role='socio'
+    },
+    societaId: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      defaultValue: null   // id della società di appartenenza (null solo per superuser)
     }
   }, {
     sequelize,

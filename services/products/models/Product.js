@@ -50,6 +50,7 @@ module.exports = (sequelize, DataTypes) => {
     periodicity: DataTypes.STRING, // periodic_quota
     duration: DataTypes.STRING, // subscription
     giorniAvvisoScadenza: DataTypes.INTEGER, // subscription
+    passepartout: { type: DataTypes.BOOLEAN, defaultValue: false }, // subscription
     unlimitedEntries: DataTypes.BOOLEAN, // subscription
     numEntries: DataTypes.INTEGER, // subscription
     season: DataTypes.STRING, // inscription, schedule

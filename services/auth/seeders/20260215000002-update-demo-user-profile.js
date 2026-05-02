@@ -18,7 +18,8 @@ module.exports = {
           `UPDATE "Users" 
            SET 
              username = 'demo',
-             role = 'admin', 
+             role = 'superuser', 
+             "societaId" = NULL,
              nome = 'DONATO', 
              cognome = 'SALFI', 
              telefono = '336382041',
@@ -31,7 +32,7 @@ module.exports = {
             username: 'demo',
             email: 'demo@example.com',
             password: hashedPassword,
-            role: 'admin',
+            role: 'superuser',
             nome: 'DONATO',
             cognome: 'SALFI',
             telefono: '336382041',

@@ -87,7 +87,15 @@ exports.getAll = async (req, res) => {
             where.numero_ricevuta = req.query.numero_ricevuta;
         }
         if (req.query.product_id) {
-            where.product_id = req.query.product_id;
+            const pid = parseInt(req.query.product_id, 10);
+            if (!isNaN(pid)) {
+                if (!where[Op.and]) where[Op.and] = [];
+                where[Op.and].push(
+                    Payment.sequelize.literal(
+                        `("product_id" = ${pid} OR ("payment_items" IS NOT NULL AND "payment_items" @> '[{"product_id": ${pid}}]'))`
+                    )
+                );
+            }
         }
         const payments = await Payment.findAll({ where });
         res.json(payments);
@@ -138,15 +146,28 @@ exports.create = async (req, res) => {
         }
 
         if (Array.isArray(items) && items.length > 0) {
-            // Multi-item: un record Payment per voce del carrello, tutti condividono numero_ricevuta
-            const created = await Promise.all(
-                items.map(item => Payment.create({
-                    ...commonFields,
-                    ...item,
-                    progressivo_stagione,
-                    numero_ricevuta,
-                }))
-            );
+            // Singolo record per l'intera transazione con payment_items come dettaglio
+            const subItem = items.find(i => i.quote_types === 'subscription');
+            const tessItem = items.find(i => i.quote_types === 'tesseramento');
+            const primaryItem = subItem || tessItem || items[0];
+
+            const allTypes = [...new Set(items.map(i => i.quote_types).filter(Boolean))].join(',');
+            const totalImporto = items.reduce((sum, i) => sum + parseFloat(i.importo || 0), 0);
+            const quoteStr = items.map(i => i.quote).join(' + ');
+
+            const created = await Payment.create({
+                ...commonFields,
+                importo: totalImporto,
+                quote: quoteStr,
+                quote_types: allTypes,
+                product_id: primaryItem.product_id || null,
+                payment_items: items,
+                data_inizio_abbonamento: subItem?.data_inizio_abbonamento || null,
+                data_scadenza_abbonamento: subItem?.data_scadenza_abbonamento || null,
+                periodicity_tesseramento: tessItem?.periodicity_tesseramento || null,
+                progressivo_stagione,
+                numero_ricevuta,
+            });
             return res.status(201).json(created);
         }
 

@@ -1,4 +1,11 @@
-const { CorsoIscrizione, Corso } = require('../models');
+const { CorsoIscrizione, Corso, Attivita, Struttura, Area, Staff } = require('../models');
+
+const CORSO_INCLUDES = [
+    { model: Attivita, as: 'attivita', attributes: ['id', 'descrizione', 'colore'] },
+    { model: Struttura, as: 'struttura', attributes: ['id', 'descrizione'] },
+    { model: Area, as: 'area', attributes: ['id', 'descrizione'] },
+    { model: Staff, as: 'staff', attributes: ['id', 'nome', 'cognome'] },
+];
 
 // GET /api/corsi/iscrizioni?societaId=X  – tutte le iscrizioni dei corsi di una società
 exports.getAllBySocieta = async (req, res) => {
@@ -57,6 +64,30 @@ exports.removeIscritto = async (req, res) => {
         });
         if (!deleted) return res.status(404).json({ error: 'Iscrizione non trovata' });
         res.status(204).end();
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// GET /api/corsi/socio/:socioId?societaId=X – tutti i corsi a cui un socio è iscritto
+exports.getBySocio = async (req, res) => {
+    try {
+        const { societaId } = req.query;
+        const { socioId } = req.params;
+        if (!societaId) return res.status(400).json({ error: 'societaId richiesto' });
+
+        const iscrizioni = await CorsoIscrizione.findAll({
+            where: { socioId },
+            include: [{
+                model: Corso,
+                as: 'corso',
+                where: { societaId },
+                include: CORSO_INCLUDES,
+            }],
+            order: [['dataIscrizione', 'ASC']],
+        });
+
+        res.json(iscrizioni);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }

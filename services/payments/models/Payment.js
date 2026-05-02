@@ -49,6 +49,10 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.INTEGER,
       allowNull: true,
     },
+    payment_items: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+    },
   }, {
     sequelize,
     modelName: 'Payment',
