@@ -99,6 +99,13 @@ services:
       - DB_PASSWORD=postgres
       - DB_NAME=users_db
       - SERVICE_NAME=users-service
+      - SMTP_HOST=mail.webassociazioni.it
+      - SMTP_PORT=465
+      - SMTP_SECURE=true
+      - SMTP_USER=noreply
+      - SMTP_PASSWORD=Plmjyrdx2026@
+      - SMTP_FROM_EMAIL=noreplysmtp@webassociazioni.it
+      - SMTP_FROM_NAME=WebAssociazioni
     ports:
       - "3003:3000"
       - "9231:9229"

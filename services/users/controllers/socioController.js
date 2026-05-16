@@ -1,5 +1,6 @@
 const { Socio, User, Societa, Comunicazione, Iscrizione } = require('../models');
 const { Op } = require('sequelize');
+const { sendEmail } = require('../utils/mailService');
 
 // Helper to calculate fiscal year
 function calculateAnnoContabile(date, societa) {
@@ -38,31 +39,95 @@ function calculateAnnoContabile(date, societa) {
     return year;
 }
 
+// Validazione campi obbligatori in base al tipo socio
+function validateSocioData(data) {
+    const tipo = data.tipo_socio || 'persona_fisica';
+    if (tipo === 'associazione') {
+        if (!data.ragione_sociale) return 'La denominazione è obbligatoria per le associazioni.';
+        if (!data.codice_fiscale) return 'Il codice fiscale è obbligatorio.';
+    } else {
+        if (!data.cognome) return 'Il cognome è obbligatorio.';
+        if (!data.nome) return 'Il nome è obbligatorio.';
+        if (!data.sesso) return 'Il sesso è obbligatorio.';
+        if (!data.data_nascita) return 'La data di nascita è obbligatoria.';
+        if (!data.luogo_nascita) return 'Il luogo di nascita è obbligatorio.';
+        if (!data.codice_fiscale) return 'Il codice fiscale è obbligatorio.';
+    }
+    return null;
+}
+
 class SocioController {
 
     // Create a new Communication
     async createComunicazione(req, res) {
         try {
-            const socio_id = req.params.id; // From URL params
+            const socio_id = req.params.id;
             const { tipo, oggetto, testo } = req.body;
 
             // Basic validation
             if (!socio_id || !tipo || !testo) {
                 return res.status(400).json({ error: 'Campi obbligatori mancanti (tipo, testo)' });
             }
+            if (tipo === 'EMAIL' && !oggetto) {
+                return res.status(400).json({ error: "L'oggetto è obbligatorio per le email" });
+            }
 
-            // Implementazione demo
+            // Load socio with societa to determine SMTP config and recipient address
+            const socio = await Socio.findByPk(socio_id, {
+                include: [{ model: Societa, as: 'societa' }]
+            });
+
+            if (!socio) {
+                return res.status(404).json({ error: 'Socio non trovato' });
+            }
+
+            let isInviato = false;
+            let mittente_email = null;
+            let mittente_nome = null;
+            let mittente_smtp_params = null;
+            let invioError = null;
+
+            if (tipo === 'EMAIL') {
+                if (!socio.email) {
+                    return res.status(400).json({ error: 'Il socio non ha un indirizzo email registrato' });
+                }
+
+                try {
+                    const result = await sendEmail({
+                        to: socio.email,
+                        subject: oggetto,
+                        html: testo,
+                        societa: socio.societa || null
+                    });
+                    isInviato = true;
+                    mittente_email = result.fromEmail;
+                    mittente_nome = result.fromName;
+                    mittente_smtp_params = result.smtpParams;
+                } catch (mailErr) {
+                    console.error('Errore invio email:', mailErr);
+                    invioError = mailErr.message;
+                    // Salva la comunicazione come non inviata senza bloccare la risposta
+                }
+            }
+
             const comunicazione = await Comunicazione.create({
                 socio_id,
                 tipo,
                 oggetto: tipo === 'EMAIL' ? oggetto : null,
                 testo,
-                isInviato: false, 
-                mittente_email: 'demo@example.com',
-                mittente_nome: 'Utente Demo',
-                mittente_smtp_params: { host: 'smtp.demo.com', port: 587 },
+                isInviato,
+                mittente_email,
+                mittente_nome,
+                mittente_smtp_params,
                 data_invio: new Date()
             });
+
+            if (invioError) {
+                return res.status(207).json({
+                    comunicazione,
+                    warning: `Comunicazione salvata ma non inviata: ${invioError}`
+                });
+            }
 
             return res.status(201).json(comunicazione);
         } catch (error) {
@@ -95,12 +160,16 @@ class SocioController {
     // Create a new Socio
     async createSocio(req, res) {
         try {
-            // Note: In a real scenario, you probably want to create a User first or link it here.
-            // For now, we assume user_id might be provided or we create a socio standalone if allowed 
-            // (but our model requires user_id).
-            // Example: { user_id: 1, nome: 'Mario', cognome: 'Rossi', ... }
-            
             const socioData = { ...req.body };
+
+            // user_id viene assegnato solo quando si concede l'accesso frontend - non deve essere passato alla creazione
+            delete socioData.user_id;
+
+            // Validazione in base al tipo socio
+            const validationError = validateSocioData(socioData);
+            if (validationError) {
+                return res.status(400).json({ error: validationError });
+            }
 
             // Check duplicate Codice Fiscale within the same Societa
             if (socioData.codice_fiscale && socioData.societa_id) {
@@ -130,7 +199,7 @@ class SocioController {
         } catch (error) {
             console.error('Error creating socio:', error);
             if (error.name === 'SequelizeUniqueConstraintError') {
-                 return res.status(400).json({ error: 'Errore: Codice fiscale o altro campo univoco duplicato.' });
+                 return res.status(400).json({ error: 'Codice fiscale già presente in questa società.' });
             }
             return res.status(500).json({ error: error.message });
         }

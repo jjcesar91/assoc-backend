@@ -25,12 +25,12 @@ module.exports = (sequelize, DataTypes) => {
   Socio.init({
     user_id: {
       type: DataTypes.INTEGER,
-      allowNull: false,
+      allowNull: true,
       references: {
         model: 'users',
         key: 'id'
-      },
-      unique: true // One socio profile per user
+      }
+      // unique non messo qui: gestito a livello DB con indice parziale (solo valori non-null)
     },
     societa_id: {
       type: DataTypes.INTEGER,
@@ -40,42 +40,79 @@ module.exports = (sequelize, DataTypes) => {
         key: 'id'
       }
     },
-    // Anagrafica Base
+    // Tipo socio: 'persona_fisica' (default) o 'associazione'
+    tipo_socio: {
+      type: DataTypes.STRING(20),
+      allowNull: false,
+      defaultValue: 'persona_fisica'
+    },
+
+    // Campi associazione
+    ragione_sociale: {
+      type: DataTypes.STRING(255),
+      allowNull: true
+    },
+    partita_iva: {
+      type: DataTypes.STRING(20),
+      allowNull: true
+    },
+    codice_sdi: {
+      type: DataTypes.STRING(10),
+      allowNull: true
+    },
+    pec: {
+      type: DataTypes.STRING(255),
+      allowNull: true
+    },
+    tipo_associazione: {
+      type: DataTypes.STRING(50),
+      allowNull: true
+    },
+    cognome_rappresentante: {
+      type: DataTypes.STRING(255),
+      allowNull: true
+    },
+    nome_rappresentante: {
+      type: DataTypes.STRING(255),
+      allowNull: true
+    },
+
+    // Anagrafica Base (persona fisica)
     cognome: {
       type: DataTypes.STRING,
-      allowNull: false
+      allowNull: true
     },
     nome: {
       type: DataTypes.STRING,
-      allowNull: false
+      allowNull: true
     },
     sesso: {
       type: DataTypes.STRING(10), // M, F, etc.
-      allowNull: false
+      allowNull: true
     },
     data_nascita: {
       type: DataTypes.DATEONLY,
-      allowNull: false
+      allowNull: true
     },
     luogo_nascita: {
       type: DataTypes.STRING,
-      allowNull: false
+      allowNull: true
     },
     codice_fiscale: {
       type: DataTypes.STRING(16),
-      allowNull: false,
-      unique: true
+      allowNull: true,
+      // unique composito con societa_id — definito in indexes
     },
     email: {
       type: DataTypes.STRING,
-      allowNull: false, // Image has *
+      allowNull: true,
       validate: {
         isEmail: true
       }
     },
     telefono: {
       type: DataTypes.STRING,
-      allowNull: false // Image has * (assumed)
+      allowNull: true
     },
     
     // Address
@@ -175,7 +212,14 @@ module.exports = (sequelize, DataTypes) => {
   }, {
     sequelize,
     modelName: 'Socio',
-    tableName: 'socios'
+    tableName: 'socios',
+    indexes: [
+      {
+        unique: true,
+        fields: ['codice_fiscale', 'societa_id'],
+        name: 'socios_cf_societa_unique'
+      }
+    ]
   });
   
   return Socio;

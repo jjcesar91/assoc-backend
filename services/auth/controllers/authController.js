@@ -146,7 +146,27 @@ exports.adminListUsers = async (req, res) => {
         if (!societaId) {
             return res.status(400).json({ error: 'societaId è obbligatorio' });
         }
-        where.societaId = parseInt(societaId, 10);
+        const parsedSocietaId = parseInt(societaId, 10);
+
+        // Recupera gli id dei soci di questa società per includere anche gli utenti
+        // soci legacy creati senza societaId
+        let legacySocioRefIds = [];
+        try {
+            const usersResp = await fetch(`http://users_ms:3000/api/soci?societa_id=${parsedSocietaId}`);
+            if (usersResp.ok) {
+                const soci = await usersResp.json();
+                legacySocioRefIds = soci.map(s => s.id);
+            }
+        } catch (_) {
+            // Se il users-service non è raggiungibile, ignora la lookup legacy
+        }
+
+        const orConditions = [{ societaId: parsedSocietaId }];
+        if (legacySocioRefIds.length > 0) {
+            orConditions.push({ role: 'socio', societaId: null, socio_ref_id: { [Op.in]: legacySocioRefIds } });
+        }
+        where[Op.or] = orConditions;
+
         const users = await User.findAll({
             where,
             attributes: { exclude: ['password'] },
@@ -305,7 +325,7 @@ function generateRandomPassword() {
 
 exports.createSocioAccess = async (req, res) => {
     try {
-        const { socio_ref_id, email, nome, cognome } = req.body;
+        const { socio_ref_id, email, nome, cognome, societaId } = req.body;
         if (!socio_ref_id || !email) {
             return res.status(400).json({ error: 'socio_ref_id ed email sono obbligatori' });
         }
@@ -348,6 +368,7 @@ exports.createSocioAccess = async (req, res) => {
             role: 'socio',
             attivo: true,
             socio_ref_id,
+            societaId: societaId ? parseInt(societaId, 10) : null,
         });
 
         res.status(201).json({

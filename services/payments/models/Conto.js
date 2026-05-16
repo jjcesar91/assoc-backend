@@ -21,8 +21,8 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: false
     },
     modalita_pagamento: {
-      type: DataTypes.ENUM('Contanti', 'POS', 'Assegno', 'Bonifico'),
-      allowNull: false
+      type: DataTypes.STRING(50),
+      allowNull: true
     }
   }, {
     sequelize,

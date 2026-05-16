@@ -27,6 +27,8 @@ router.delete('/fornitori/:id', FornitoreController.delete);
 
 router.get('/next-numero', PaymentController.getNextNumero);
 router.get('/', PaymentController.getAll);
+router.post('/bulk', PaymentController.bulk);
+router.post('/import-voci', PaymentController.importVoci);
 router.post('/', PaymentController.create);
 router.put('/:id', PaymentController.update);
 router.delete('/:id', PaymentController.delete);

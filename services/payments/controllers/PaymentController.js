@@ -110,7 +110,7 @@ exports.create = async (req, res) => {
         const { items, emetti_ricevuta, anno_ricevuta, ...commonFields } = req.body;
 
         let progressivo_stagione = null;
-        let numero_ricevuta = null;
+        let numero_ricevuta = commonFields.numero_ricevuta || null;
 
         if (emetti_ricevuta === 'SI' && commonFields.societa_id) {
             const targetAnno = anno_ricevuta ? parseInt(anno_ricevuta, 10) : null;
@@ -155,13 +155,16 @@ exports.create = async (req, res) => {
             const totalImporto = items.reduce((sum, i) => sum + parseFloat(i.importo || 0), 0);
             const quoteStr = items.map(i => i.quote).join(' + ');
 
+            // Salva payment_items senza il campo quote (risolto dinamicamente dal product_id)
+            const paymentItemsClean = items.map(({ quote: _q, ...rest }) => rest);
+
             const created = await Payment.create({
                 ...commonFields,
                 importo: totalImporto,
                 quote: quoteStr,
                 quote_types: allTypes,
                 product_id: primaryItem.product_id || null,
-                payment_items: items,
+                payment_items: paymentItemsClean,
                 data_inizio_abbonamento: subItem?.data_inizio_abbonamento || null,
                 data_scadenza_abbonamento: subItem?.data_scadenza_abbonamento || null,
                 periodicity_tesseramento: tessItem?.periodicity_tesseramento || null,
@@ -256,6 +259,20 @@ exports.getNextNumero = async (req, res) => {
     }
 };
 
+exports.bulk = async (req, res) => {
+    try {
+        const { payments: rows } = req.body;
+        if (!Array.isArray(rows) || rows.length === 0) {
+            return res.status(400).json({ error: 'payments array is required' });
+        }
+        const created = await Payment.bulkCreate(rows, { returning: true });
+        res.status(201).json({ count: created.length });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to bulk create payments' });
+    }
+};
+
 exports.annulla = async (req, res) => {
     try {
         const { id } = req.params;
@@ -271,5 +288,71 @@ exports.annulla = async (req, res) => {
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Failed to annul payment' });
+    }
+};
+
+// ── Import voci ricevuta ────────────────────────────────────────────────────
+// Aggiorna i payment_items di pagamenti esistenti in base al numero ricevuta.
+// Body: { societa_id, items: [{ numero_ricevuta, rows: [{quota, importo, product_id, quote_types, valido}] }] }
+exports.importVoci = async (req, res) => {
+    try {
+        const { societa_id, items } = req.body;
+        if (!societa_id || !Array.isArray(items) || items.length === 0) {
+            return res.status(400).json({ error: 'societa_id e items sono obbligatori' });
+        }
+
+        const results = { updated: [], notFound: [], errors: [] };
+
+        for (const item of items) {
+            const { numero_ricevuta, rows } = item;
+            if (!numero_ricevuta || !Array.isArray(rows) || rows.length === 0) continue;
+
+            try {
+                const payment = await Payment.findOne({
+                    where: { societa_id, numero_ricevuta },
+                });
+
+                if (!payment) {
+                    results.notFound.push(numero_ricevuta);
+                    continue;
+                }
+
+                // Filtra solo le righe valide (VALIDO=1)
+                const validRows = rows.filter(r => {
+                    const v = r.valido;
+                    return v !== false && v !== 0 && v !== '0' && v !== 0;
+                });
+                if (validRows.length === 0) {
+                    results.notFound.push(numero_ricevuta);
+                    continue;
+                }
+
+                const paymentItems = validRows.map(r => ({
+                    importo: parseFloat(r.importo) || 0,
+                    product_id: r.product_id || null,
+                    quote_types: r.quote_types || null,
+                }));
+
+                const totalImporto = paymentItems.reduce((sum, pi) => sum + pi.importo, 0);
+                const quoteStr = validRows.map(r => r.quota).join(', ');
+                const allTypes = [...new Set(paymentItems.map(pi => pi.quote_types).filter(Boolean))].join(',');
+
+                await payment.update({
+                    payment_items: paymentItems,
+                    quote: quoteStr,
+                    importo: totalImporto,
+                    ...(allTypes ? { quote_types: allTypes } : {}),
+                });
+
+                results.updated.push(numero_ricevuta);
+            } catch (e) {
+                results.errors.push({ numero_ricevuta, error: e.message });
+            }
+        }
+
+        res.json(results);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Errore durante l\'import delle voci' });
     }
 };
