@@ -99,6 +99,7 @@ services:
       - DB_PASSWORD=postgres
       - DB_NAME=users_db
       - SERVICE_NAME=users-service
+      - JWT_SECRET=super_secret_key_change_me
       - SMTP_HOST=mail.webassociazioni.it
       - SMTP_PORT=465
       - SMTP_SECURE=true

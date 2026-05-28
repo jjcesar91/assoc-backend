@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const societaController = require('../controllers/societaController');
+const authenticateToken = require('../middleware/auth');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -22,6 +23,8 @@ const storage = multer.diskStorage({
 });
 
 const upload = multer({ storage: storage });
+
+router.use(authenticateToken);
 
 // Routes for /api/societa
 router.get('/', societaController.getAllSocieta);

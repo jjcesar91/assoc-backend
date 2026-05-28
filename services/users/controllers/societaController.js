@@ -1,11 +1,23 @@
 const { Societa, SocietaAffiliazioni } = require('../models');
 
+const getUserScope = (req) => {
+    const role = req.user?.role || 'user';
+    const societaId = req.user?.societaId != null ? parseInt(req.user.societaId, 10) : null;
+    return { role, societaId };
+};
+
 class SocietaController {
 
     // Get all Societa
     async getAllSocieta(req, res) {
         try {
+            const { role, societaId } = getUserScope(req);
+            const where = role === 'superuser'
+                ? undefined
+                : (Number.isInteger(societaId) ? { id: societaId } : { id: -1 });
+
             const societa = await Societa.findAll({
+                where,
                 include: [{
                     model: SocietaAffiliazioni,
                     as: 'affiliazioni'
@@ -22,6 +34,13 @@ class SocietaController {
     async getSocietaById(req, res) {
         try {
             const { id } = req.params;
+            const requestedId = parseInt(id, 10);
+            const { role, societaId } = getUserScope(req);
+
+            if (role !== 'superuser' && Number.isInteger(societaId) && requestedId !== societaId) {
+                return res.status(403).json({ message: 'Forbidden' });
+            }
+
             const societa = await Societa.findByPk(id, {
                 include: [{
                     model: SocietaAffiliazioni,
