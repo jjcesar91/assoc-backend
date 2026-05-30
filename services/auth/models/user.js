@@ -1,6 +1,7 @@
 'use strict';
 const { Model } = require('sequelize');
 const bcrypt = require('bcryptjs');
+const { validatePasswordOrThrow } = require('../utils/passwordPolicy');
 
 module.exports = (sequelize, DataTypes) => {
   class User extends Model {
@@ -41,7 +42,12 @@ module.exports = (sequelize, DataTypes) => {
     },
     password: {
       type: DataTypes.STRING,
-      allowNull: false
+      allowNull: false,
+      validate: {
+        isStrongEnough(value) {
+          validatePasswordOrThrow(value);
+        }
+      }
     },
     role: {
       type: DataTypes.STRING,

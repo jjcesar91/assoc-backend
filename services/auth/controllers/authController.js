@@ -1,5 +1,24 @@
 const { User } = require('../models');
 const jwt = require('jsonwebtoken');
+const { ValidationError } = require('sequelize');
+
+const {
+    MIN_PASSWORD_LENGTH,
+    validatePasswordOrThrow,
+} = require('../utils/passwordPolicy');
+
+const PASSWORD_SPECIAL_CHARACTERS = '!@#$%^&*';
+
+const formatErrorMessage = (error) => {
+    if (!error) return 'Errore interno';
+    if (error.name === 'PasswordValidationError' && Array.isArray(error.details) && error.details.length > 0) {
+        return error.details.join('. ');
+    }
+    if (error instanceof ValidationError && Array.isArray(error.errors) && error.errors.length > 0) {
+        return error.errors.map((entry) => entry.message).join('. ');
+    }
+    return error.message || 'Errore interno';
+};
 
 const generateTokens = (user) => {
     const accessToken = jwt.sign(
@@ -18,11 +37,12 @@ const generateTokens = (user) => {
 exports.register = async (req, res) => {
     try {
         const { username, email, password } = req.body;
+        validatePasswordOrThrow(password);
         const user = await User.create({ username, email, password });
         const tokens = generateTokens(user);
         res.json({ user: { id: user.id, username: user.username, email: user.email }, ...tokens });
     } catch (error) {
-        res.status(400).json({ error: error.message });
+        res.status(400).json({ error: formatErrorMessage(error) });
     }
 };
 
@@ -125,12 +145,13 @@ exports.updatePassword = async (req, res) => {
             return res.status(400).json({ error: 'Invalid old password' });
         }
 
+        validatePasswordOrThrow(newPassword);
         user.password = newPassword; // Will be hashed by beforeUpdate hook
         await user.save();
 
         res.json({ message: 'Password updated successfully' });
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        res.status(400).json({ error: formatErrorMessage(error) });
     }
 };
 
@@ -192,6 +213,7 @@ exports.adminCreateUser = async (req, res) => {
         if (effectiveRole !== 'superuser' && !effectiveSocietaId) {
             return res.status(400).json({ error: 'societaId è obbligatorio per utenti non-superuser' });
         }
+        validatePasswordOrThrow(password);
         const existing = await User.findOne({ where: { username } });
         if (existing) return res.status(400).json({ error: 'Username già in uso' });
         const existingEmail = await User.findOne({ where: { email } });
@@ -200,7 +222,7 @@ exports.adminCreateUser = async (req, res) => {
         const { password: _, ...safe } = user.toJSON();
         res.status(201).json(safe);
     } catch (error) {
-        res.status(400).json({ error: error.message });
+        res.status(400).json({ error: formatErrorMessage(error) });
     }
 };
 
@@ -224,12 +246,15 @@ exports.adminUpdateUser = async (req, res) => {
         if (telefono !== undefined) user.telefono = telefono;
         if (role !== undefined) user.role = role;
         if (societaId !== undefined) user.societaId = societaId ? parseInt(societaId, 10) : null;
-        if (password) user.password = password;
+        if (password) {
+            validatePasswordOrThrow(password);
+            user.password = password;
+        }
         await user.save();
         const { password: _, ...safe } = user.toJSON();
         res.json(safe);
     } catch (error) {
-        res.status(400).json({ error: error.message });
+        res.status(400).json({ error: formatErrorMessage(error) });
     }
 };
 
@@ -320,7 +345,14 @@ const PASSPHRASE_WORDS = [
 function generateRandomPassword() {
     const pick = () => PASSPHRASE_WORDS[Math.floor(Math.random() * PASSPHRASE_WORDS.length)];
     const num = Math.floor(Math.random() * 90) + 10; // 10-99
-    return `${pick()}-${pick()}-${pick()}-${num}`;
+    const special = PASSWORD_SPECIAL_CHARACTERS[Math.floor(Math.random() * PASSWORD_SPECIAL_CHARACTERS.length)];
+    const base = `${pick()}-${pick()}-${pick()}-${num}${special}A`;
+
+    if (base.length >= MIN_PASSWORD_LENGTH) {
+        return base;
+    }
+
+    return `${base}${pick().slice(0, MIN_PASSWORD_LENGTH - base.length)}`;
 }
 
 exports.createSocioAccess = async (req, res) => {
@@ -378,7 +410,7 @@ exports.createSocioAccess = async (req, res) => {
             password_plain: plainPassword,
         });
     } catch (error) {
-        res.status(400).json({ error: error.message });
+        res.status(400).json({ error: formatErrorMessage(error) });
     }
 };
 
@@ -390,7 +422,7 @@ exports.deleteSocioAccess = async (req, res) => {
         await user.destroy();
         res.json({ message: 'Accesso frontend rimosso' });
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        res.status(400).json({ error: formatErrorMessage(error) });
     }
 };
 
