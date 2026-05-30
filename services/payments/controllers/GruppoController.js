@@ -130,6 +130,9 @@ exports.update = async (req, res) => {
         }
         const record = await Gruppo.findByPk(id);
         if (!record) return res.status(404).json({ error: 'Gruppo not found' });
+            if (record.is_default) {
+                return res.status(403).json({ error: 'Impossibile modificare: questo gruppo è predefinito e non può essere modificato.' });
+            }
         await record.update(req.body);
         res.json(record);
     } catch (error) {
