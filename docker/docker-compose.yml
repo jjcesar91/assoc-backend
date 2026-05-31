@@ -24,6 +24,7 @@ services:
       - DB_PASSWORD=postgres
       - DB_NAME=template_db
       - SERVICE_NAME=template-service
+      - JWT_SECRET=super_secret_key_change_me
     ports:
       - "3001:3000" # Host:Container
       - "9229:9229" # Debug port
@@ -144,6 +145,7 @@ services:
       - DB_PASSWORD=postgres
       - DB_NAME=documents_db
       - SERVICE_NAME=documents-service
+      - JWT_SECRET=super_secret_key_change_me
     ports:
       - "3004:3000"
       - "9232:9229"
@@ -180,6 +182,7 @@ services:
       - DB_PASSWORD=postgres
       - DB_NAME=products_db
       - SERVICE_NAME=products-service
+      - JWT_SECRET=super_secret_key_change_me
     ports:
       - "3005:3000"
       - "9233:9229"
@@ -216,6 +219,7 @@ services:
       - DB_PASSWORD=postgres
       - DB_NAME=payments_db
       - SERVICE_NAME=payments-service
+      - JWT_SECRET=super_secret_key_change_me
     ports:
       - "3006:3000"
       - "9234:9229"
@@ -252,6 +256,7 @@ services:
       - DB_PASSWORD=postgres
       - DB_NAME=activities_db
       - SERVICE_NAME=activities-service
+      - JWT_SECRET=super_secret_key_change_me
     ports:
       - "3007:3000"
       - "9235:9229"

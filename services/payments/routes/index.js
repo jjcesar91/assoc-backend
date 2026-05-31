@@ -4,10 +4,13 @@ const PaymentController = require('../controllers/PaymentController');
 const ContoController = require('../controllers/ContoController');
 const GruppoController = require('../controllers/GruppoController');
 const FornitoreController = require('../controllers/FornitoreController');
+const authenticateToken = require('../middleware/auth');
 
 router.get('/health', (req, res) => {
     res.json({ status: 'OK', service: process.env.SERVICE_NAME || 'template-service' });
 });
+
+router.use(authenticateToken);
 
 router.get('/conti', ContoController.getBySocieta);
 router.post('/conti', ContoController.create);
