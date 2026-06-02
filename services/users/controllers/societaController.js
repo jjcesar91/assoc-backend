@@ -155,7 +155,7 @@ class SocietaController {
                 indirizzo, comune, cap, cognome_rappr_legale, nome_rappr_legale, 
                 alias_sms, alias_email, affiliazioni,
                 tipo_anno_associativo, data_inizio_anno_associativo,
-                footer_text, email_text, // Added template fields
+                footer_text, email_text, receipt_footer_text, // Added template fields
                 quota_tesseramento_unico,  // Impostazione quota+tesseramento unico
                 tipo_associazione  // ASD o APS
             } = req.body;
@@ -165,7 +165,7 @@ class SocietaController {
                 indirizzo, comune, cap, cognome_rappr_legale, nome_rappr_legale, 
                 alias_sms, alias_email,
                 tipo_anno_associativo, data_inizio_anno_associativo,
-                footer_text, email_text, // Added template fields
+                footer_text, email_text, receipt_footer_text, // Added template fields
                 quota_tesseramento_unico,  // Impostazione quota+tesseramento unico
                 tipo_associazione  // ASD o APS
             }, { transaction });

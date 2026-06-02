@@ -66,6 +66,10 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.TEXT,
       allowNull: true
     },
+    receipt_footer_text: {
+      type: DataTypes.TEXT,
+      allowNull: true
+    },
     email_text: {
       type: DataTypes.TEXT,
       allowNull: true
