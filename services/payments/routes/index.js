@@ -34,7 +34,9 @@ router.post('/bulk', PaymentController.bulk);
 router.post('/import-voci', PaymentController.importVoci);
 router.post('/', PaymentController.create);
 router.put('/:id', PaymentController.update);
+router.delete('/:id/proforma', PaymentController.deleteProforma);
 router.delete('/:id', PaymentController.delete);
 router.patch('/:id/annulla', PaymentController.annulla);
+router.patch('/:id/converti-proforma', PaymentController.convertiProforma);
 
 module.exports = router;

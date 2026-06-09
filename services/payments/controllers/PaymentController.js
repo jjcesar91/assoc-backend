@@ -71,6 +71,65 @@ function formatNumeroRicevuta(numero, tipo, dataInizio, dataRicevuta) {
     return `${numero}/${annoInizio}-${annoFine}`;
 }
 
+// Helper: recupera tipo e dataInizio della societa, passando il token auth del chiamante
+async function fetchSocietaTipo(societaId, authHeader) {
+    let tipo = null;
+    let dataInizio = '01-01';
+    try {
+        const usersUrl = process.env.USERS_SERVICE_URL || 'http://users_ms:3000';
+        const headers = authHeader ? { 'Authorization': authHeader } : {};
+        const socRes = await fetch(`${usersUrl}/api/societa/${societaId}`, { headers });
+        if (socRes.ok) {
+            const societa = await socRes.json();
+            tipo = societa.tipo_anno_associativo || 'solare';
+            dataInizio = societa.data_inizio_anno_associativo || '01-01';
+        } else {
+            console.error(`fetchSocietaTipo: risposta non ok (${socRes.status}) per societa ${societaId}`);
+        }
+    } catch (e) {
+        console.error('fetchSocietaTipo: errore fetch:', e.message);
+    }
+    return { tipo, dataInizio };
+}
+
+// Helper: trova l'ultimo progressivo per un dato anno.
+// Prima cerca per progressivo_stagione (campo esplicito),
+// poi fallback sul numero_ricevuta (pagamenti importati senza progressivo).
+async function findLastProgressivoInAnno(societaId, tipo, annoStartStr, annoEndStr) {
+    // Metodo primario: progressivo_stagione esplicito + data_ricevuta nel range
+    const effectiveAnno = parseInt(annoStartStr.split('-')[0], 10);
+    const annoSuffix = tipo === 'solare'
+        ? `/${effectiveAnno}`
+        : `/${effectiveAnno}-${String(effectiveAnno + 1).slice(-2)}`;
+
+    const byProgressivo = await Payment.findOne({
+        where: {
+            societa_id: societaId,
+            progressivo_stagione: { [Op.not]: null },
+            numero_ricevuta: { [Op.like]: `%${annoSuffix}` },
+        },
+        order: [['progressivo_stagione', 'DESC']],
+    });
+    if (byProgressivo) return byProgressivo.progressivo_stagione;
+
+    // Fallback: pagamenti importati con numero_ricevuta ma senza progressivo_stagione
+    const byNumero = await Payment.findOne({
+        where: {
+            societa_id: societaId,
+            numero_ricevuta: { [Op.like]: `%${annoSuffix}` },
+        },
+        order: [
+            [Payment.sequelize.literal("CAST(SPLIT_PART(numero_ricevuta, '/', 1) AS INTEGER)"), 'DESC'],
+        ],
+    });
+    if (byNumero && byNumero.numero_ricevuta) {
+        const num = parseInt(byNumero.numero_ricevuta.split('/')[0], 10);
+        if (!isNaN(num)) return num;
+    }
+
+    return 0; // Nessun pagamento trovato
+}
+
 exports.getAll = async (req, res) => {
     try {
         const { societa_id, codice_fiscale } = req.query;
@@ -114,35 +173,19 @@ exports.create = async (req, res) => {
 
         if (emetti_ricevuta === 'SI' && commonFields.societa_id) {
             const targetAnno = anno_ricevuta ? parseInt(anno_ricevuta, 10) : null;
-            let tipo = 'solare';
-            let dataInizio = '01-01';
-            try {
-                const usersUrl = process.env.USERS_SERVICE_URL || 'http://users_ms:3000';
-                const socRes = await fetch(`${usersUrl}/api/societa/${commonFields.societa_id}`);
-                if (socRes.ok) {
-                    const societa = await socRes.json();
-                    tipo = societa.tipo_anno_associativo || 'solare';
-                    dataInizio = societa.data_inizio_anno_associativo || '01-01';
-                }
-            } catch (e) {
-                console.error('Impossibile recuperare dati societa, uso tipo solare:', e.message);
-            }
+            const { tipo, dataInizio } = await fetchSocietaTipo(commonFields.societa_id, req.headers['authorization']);
+            const tipoEffettivo = tipo || 'solare';
 
-            const annoStartStr = getAnnoStart(tipo, dataInizio, targetAnno);
-            const annoEndStr = getAnnoEnd(tipo, dataInizio, targetAnno);
+            const annoStartStr = getAnnoStart(tipoEffettivo, dataInizio, targetAnno);
+            const annoEndStr = getAnnoEnd(tipoEffettivo, dataInizio, targetAnno);
 
-            const lastPayment = await Payment.findOne({
-                where: {
-                    societa_id: commonFields.societa_id,
-                    progressivo_stagione: { [Op.not]: null },
-                    data_ricevuta: { [Op.gte]: annoStartStr, [Op.lt]: annoEndStr }
-                },
-                order: [['progressivo_stagione', 'DESC']]
-            });
+            const lastProgressivo = await findLastProgressivoInAnno(
+                commonFields.societa_id, tipoEffettivo, annoStartStr, annoEndStr
+            );
 
-            const nextProgressivo = lastPayment ? (lastPayment.progressivo_stagione + 1) : 1;
+            const nextProgressivo = lastProgressivo + 1;
             progressivo_stagione = nextProgressivo;
-            numero_ricevuta = formatNumeroRicevuta(nextProgressivo, tipo, dataInizio, commonFields.data_ricevuta);
+            numero_ricevuta = formatNumeroRicevuta(nextProgressivo, tipoEffettivo, dataInizio, commonFields.data_ricevuta);
         }
 
         if (Array.isArray(items) && items.length > 0) {
@@ -216,6 +259,24 @@ exports.delete = async (req, res) => {
     }
 };
 
+exports.deleteProforma = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const payment = await Payment.findOne({ where: { id } });
+        if (!payment) {
+            return res.status(404).json({ error: 'Payment not found' });
+        }
+        if (payment.tipo_documento !== 'proforma') {
+            return res.status(403).json({ error: 'Only proforma payments can be deleted with this endpoint' });
+        }
+        await payment.destroy();
+        return res.status(204).send();
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to delete proforma' });
+    }
+};
+
 // Restituisce il prossimo numero ricevuta formattato (per anteprima nel frontend)
 exports.getNextNumero = async (req, res) => {
     try {
@@ -224,35 +285,19 @@ exports.getNextNumero = async (req, res) => {
 
         const targetAnno = anno ? parseInt(anno, 10) : null;
 
-        let tipo = 'solare';
-        let dataInizio = '01-01';
-        try {
-            const usersUrl = process.env.USERS_SERVICE_URL || 'http://users_ms:3000';
-            const socRes = await fetch(`${usersUrl}/api/societa/${societa_id}`);
-            if (socRes.ok) {
-                const societa = await socRes.json();
-                tipo = societa.tipo_anno_associativo || 'solare';
-                dataInizio = societa.data_inizio_anno_associativo || '01-01';
-            }
-        } catch (e) {
-            console.error('Impossibile recuperare dati societa:', e.message);
-        }
+        const { tipo, dataInizio } = await fetchSocietaTipo(societa_id, req.headers['authorization']);
+        const tipoEffettivo = tipo || 'solare';
 
-        const annoStartStr = getAnnoStart(tipo, dataInizio, targetAnno);
-        const annoEndStr = getAnnoEnd(tipo, dataInizio, targetAnno);
-        const lastPayment = await Payment.findOne({
-            where: {
-                societa_id,
-                progressivo_stagione: { [Op.not]: null },
-                data_ricevuta: { [Op.gte]: annoStartStr, [Op.lt]: annoEndStr }
-            },
-            order: [['progressivo_stagione', 'DESC']]
-        });
+        const annoStartStr = getAnnoStart(tipoEffettivo, dataInizio, targetAnno);
+        const annoEndStr = getAnnoEnd(tipoEffettivo, dataInizio, targetAnno);
 
-        const nextNumero = lastPayment ? (lastPayment.progressivo_stagione + 1) : 1;
-        const formatted = formatNumeroRicevuta(nextNumero, tipo, dataInizio, annoStartStr);
-        const lastPaymentDate = lastPayment ? lastPayment.data_ricevuta : null;
-        res.json({ nextNumero, formatted, lastPaymentDate });
+        const lastProgressivo = await findLastProgressivoInAnno(
+            societa_id, tipoEffettivo, annoStartStr, annoEndStr
+        );
+
+        const nextNumero = lastProgressivo + 1;
+        const formatted = formatNumeroRicevuta(nextNumero, tipoEffettivo, dataInizio, annoStartStr);
+        res.json({ nextNumero, formatted, lastPaymentDate: null });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Failed to get next numero' });
@@ -270,6 +315,48 @@ exports.bulk = async (req, res) => {
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Failed to bulk create payments' });
+    }
+};
+
+exports.convertiProforma = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { anno_ricevuta, data_ricevuta } = req.body;
+
+        const payment = await Payment.findByPk(id);
+        if (!payment) return res.status(404).json({ error: 'Payment not found' });
+        if (payment.tipo_documento !== 'proforma') {
+            return res.status(400).json({ error: 'Il pagamento non è di tipo proforma' });
+        }
+
+        const targetAnno = anno_ricevuta ? parseInt(anno_ricevuta, 10) : null;
+        const { tipo, dataInizio } = await fetchSocietaTipo(payment.societa_id, req.headers['authorization']);
+        const tipoEffettivo = tipo || 'solare';
+
+        const annoStartStr = getAnnoStart(tipoEffettivo, dataInizio, targetAnno);
+        const annoEndStr = getAnnoEnd(tipoEffettivo, dataInizio, targetAnno);
+
+        const lastProgressivo = await findLastProgressivoInAnno(
+            payment.societa_id, tipoEffettivo, annoStartStr, annoEndStr
+        );
+
+        const nextProgressivo = lastProgressivo + 1;
+        const dataRicevutaEff = data_ricevuta || payment.data_pagamento;
+        const numero_ricevuta = formatNumeroRicevuta(nextProgressivo, tipoEffettivo, dataInizio, dataRicevutaEff);
+
+        await payment.update({
+            tipo_documento: 'pagamento',
+            emetti_ricevuta: 'SI',
+            progressivo_stagione: nextProgressivo,
+            numero_ricevuta,
+            data_ricevuta: dataRicevutaEff,
+        });
+
+        const updated = await Payment.findByPk(id);
+        res.json(updated);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to convert proforma' });
     }
 };
 
