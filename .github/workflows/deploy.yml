@@ -20,4 +20,5 @@ jobs:
             cd ${{ secrets.DEPLOY_PATH }}
             git pull origin master
             cd docker
+            docker-compose down
             docker-compose up -d --build
