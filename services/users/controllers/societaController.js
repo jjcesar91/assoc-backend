@@ -68,66 +68,87 @@ class SocietaController {
 
              // Create default modules for the new society
              try {
-                const defaultModules = [
-                    {
-                        descrizione: 'MODULO ISCRIZIONE',
-                        testo: '',
-                        htmlContent: '',
-                        societa_id: societa.id
-                    },
-                    {
-                        descrizione: 'INFORMATIVA PRIVACY',
-                        testo: '',
-                        htmlContent: '',
-                        societa_id: societa.id
-                    }
-                ];
+                 const defaultModules = [
+                     {
+                         descrizione: 'MODULO ISCRIZIONE',
+                         testo: '',
+                         htmlContent: '',
+                         societa_id: societa.id
+                     },
+                     {
+                         descrizione: 'INFORMATIVA PRIVACY',
+                         testo: '',
+                         htmlContent: '',
+                         societa_id: societa.id
+                     }
+                 ];
 
-                // Use the internal docker service name and port
-                const documentsServiceUrl = process.env.DOCUMENTS_SERVICE_URL || 'http://documents_ms:3000';
-                
-                await fetch(`${documentsServiceUrl}/api/moduli`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(defaultModules)
-                });
-            } catch (moduleError) {
-                // Log error but don't fail the society creation, or maybe we should?
-                // For now, just log it as the society is already created.
-                console.error('Error creating default modules:', moduleError);
-            }
+                 // Use the internal docker service name and port
+                 const documentsServiceUrl = process.env.DOCUMENTS_SERVICE_URL || 'http://documents_ms:3000';
 
-            // Create default CASSA account for the new society
-            try {
-                const paymentsServiceUrl = process.env.PAYMENTS_SERVICE_URL || 'http://payments_ms:3000';
-                await fetch(`${paymentsServiceUrl}/api/conti`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        descrizione: 'CASSA',
-                        modalita_pagamento: 'Contanti',
-                        societa_id: societa.id
-                    })
-                });
-            } catch (contoError) {
-                console.error('Error creating default CASSA account:', contoError);
-            }
+                 await fetch(`${documentsServiceUrl}/api/moduli`, {
+                     method: 'POST',
+                     headers: {
+                         'Content-Type': 'application/json',
+                         'Authorization': req.headers.authorization
+                     },
+                     body: JSON.stringify(defaultModules)
+                 });
+             } catch (moduleError) {
+                 // Log error but don't fail the society creation, or maybe we should?
+                 // For now, just log it as the society is already created.
+                 console.error('Error creating default modules:', moduleError);
+             }
 
-            // Create default APS groups if tipo_associazione is APS
-            if (societaData.tipo_associazione === 'APS') {
-                try {
-                    const paymentsServiceUrl = process.env.PAYMENTS_SERVICE_URL || 'http://payments_ms:3000';
-                    await fetch(`${paymentsServiceUrl}/api/gruppi/init-aps`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ societa_id: societa.id }),
-                    });
-                } catch (gruppiError) {
-                    console.error('Error creating default APS groups:', gruppiError);
-                }
-            }
+             // Create default CASSA account for the new society
+             try {
+                 const paymentsServiceUrl = process.env.PAYMENTS_SERVICE_URL || 'http://payments_ms:3000';
+                 await fetch(`${paymentsServiceUrl}/api/conti`, {
+                     method: 'POST',
+                     headers: { 
+                         'Content-Type': 'application/json',
+                         'Authorization': req.headers.authorization
+                     },
+                     body: JSON.stringify({
+                         descrizione: 'CASSA',
+                         modalita_pagamento: 'Contanti',
+                         societa_id: societa.id
+                     })
+                 });
+             } catch (contoError) {
+                 console.error('Error creating default CASSA account:', contoError);
+             }
+
+             // Create default APS groups if tipo_associazione is APS
+             if (societaData.tipo_associazione === 'APS') {
+                 try {
+                     const paymentsServiceUrl = process.env.PAYMENTS_SERVICE_URL || 'http://payments_ms:3000';
+                     await fetch(`${paymentsServiceUrl}/api/gruppi/init-aps`, {
+                         method: 'POST',
+                         headers: { 
+                             'Content-Type': 'application/json',
+                             'Authorization': req.headers.authorization
+                         },
+                         body: JSON.stringify({ societa_id: societa.id }),
+                     });
+                 } catch (gruppiError) {
+                     console.error('Error creating default APS groups:', gruppiError);
+                 }
+             } else if (societaData.tipo_associazione === 'ASD') {
+                 try {
+                     const paymentsServiceUrl = process.env.PAYMENTS_SERVICE_URL || 'http://payments_ms:3000';
+                     await fetch(`${paymentsServiceUrl}/api/gruppi/init-asd`, {
+                         method: 'POST',
+                         headers: { 
+                             'Content-Type': 'application/json',
+                             'Authorization': req.headers.authorization
+                         },
+                         body: JSON.stringify({ societa_id: societa.id }),
+                     });
+                 } catch (gruppiError) {
+                     console.error('Error creating default ASD groups:', gruppiError);
+                 }
+             }
 
             return res.status(201).json(societa);
         } catch (error) {

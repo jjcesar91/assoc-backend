@@ -25,6 +25,7 @@ thumbs.db
 
 # Docker
 docker-compose.override.yml
+docker/docker-compose.local.yml
 
 # IDEs
 .vscode/

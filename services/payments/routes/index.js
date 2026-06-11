@@ -19,6 +19,7 @@ router.delete('/conti/:id', ContoController.delete);
 
 router.get('/gruppi', GruppoController.getBySocieta);
 router.post('/gruppi/init-aps', GruppoController.initAps);
+router.post('/gruppi/init-asd', GruppoController.initAsd);
 router.post('/gruppi', GruppoController.create);
 router.put('/gruppi/:id', GruppoController.update);
 router.delete('/gruppi/:id', GruppoController.delete);

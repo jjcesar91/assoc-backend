@@ -79,6 +79,51 @@ const APS_SOTTOGRUPPI = [
   { parentCodice: 'EE', descrizione: 'Altre entrate di supporto generale',   tipo: 'Entrata', sezione: 'E', numero: 2, codice: 'EE2' },
 ];
 
+// ---------------------------------------------------------------------------
+// Struttura default gruppi/sottogruppi per ASD
+// ---------------------------------------------------------------------------
+const ASD_GRUPPI_RADICE = [
+  { descrizione: 'Entrate attività istituzionale + attività commerciale', tipo: 'Entrata', sezione: 'A', codice: 'E' },
+  { descrizione: 'Uscite attività istituzionale + attività commerciale',  tipo: 'Uscita',  sezione: 'B', codice: 'U' },
+];
+
+const ASD_SOTTOGRUPPI = [
+  // E - Entrate
+  { parentCodice: 'E', descrizione: 'Quote associative',                      tipo: 'Entrata', sezione: 'A', numero: 1,  codice: 'E1' },
+  { parentCodice: 'E', descrizione: 'Tesseramenti',                           tipo: 'Entrata', sezione: 'A', numero: 2,  codice: 'E2' },
+  { parentCodice: 'E', descrizione: 'Quote corsi/attività istituzionali',     tipo: 'Entrata', sezione: 'A', numero: 3,  codice: 'E3' },
+  { parentCodice: 'E', descrizione: 'Contributi Enti pubblici',               tipo: 'Entrata', sezione: 'A', numero: 4,  codice: 'E4' },
+  { parentCodice: 'E', descrizione: 'Contributi Enti privati',                tipo: 'Entrata', sezione: 'A', numero: 5,  codice: 'E5' },
+  { parentCodice: 'E', descrizione: 'Donazioni/Erogazioni liberali',          tipo: 'Entrata', sezione: 'A', numero: 6,  codice: 'E6' },
+  { parentCodice: 'E', descrizione: 'Interessi attivi bancari',               tipo: 'Entrata', sezione: 'A', numero: 7,  codice: 'E7' },
+  { parentCodice: 'E', descrizione: 'Resi fornitori (note di credito forn.)', tipo: 'Entrata', sezione: 'A', numero: 8,  codice: 'E8' },
+  { parentCodice: 'E', descrizione: 'Attività corsi commerciali (no soci)',   tipo: 'Entrata', sezione: 'A', numero: 9,  codice: 'E9' },
+  { parentCodice: 'E', descrizione: 'Vendita abbigliamento/gadget',           tipo: 'Entrata', sezione: 'A', numero: 10, codice: 'E10' },
+  { parentCodice: 'E', descrizione: 'Entrate bar',                            tipo: 'Entrata', sezione: 'A', numero: 11, codice: 'E11' },
+  { parentCodice: 'E', descrizione: 'Entrate Sponsor',                        tipo: 'Entrata', sezione: 'A', numero: 12, codice: 'E12' },
+  { parentCodice: 'E', descrizione: 'Prestito infruttifero soci',             tipo: 'Entrata', sezione: 'A', numero: 13, codice: 'E13' },
+  
+  // U - Uscite
+  { parentCodice: 'U', descrizione: 'Affiliazioni/Tesseramenti',              tipo: 'Uscita',  sezione: 'B', numero: 1,  codice: 'U1' },
+  { parentCodice: 'U', descrizione: 'Iscrizione eventi sportivi',             tipo: 'Uscita',  sezione: 'B', numero: 2,  codice: 'U2' },
+  { parentCodice: 'U', descrizione: 'Formazione',                             tipo: 'Uscita',  sezione: 'B', numero: 3,  codice: 'U3' },
+  { parentCodice: 'U', descrizione: 'Personale/collaboratori',                tipo: 'Uscita',  sezione: 'B', numero: 4,  codice: 'U4' },
+  { parentCodice: 'U', descrizione: 'Consulenti',                             tipo: 'Uscita',  sezione: 'B', numero: 5,  codice: 'U5' },
+  { parentCodice: 'U', descrizione: 'Materiali sportivi',                     tipo: 'Uscita',  sezione: 'B', numero: 6,  codice: 'U6' },
+  { parentCodice: 'U', descrizione: 'Rimborsi spese',                         tipo: 'Uscita',  sezione: 'B', numero: 7,  codice: 'U7' },
+  { parentCodice: 'U', descrizione: 'Spese generali',                         tipo: 'Uscita',  sezione: 'B', numero: 8,  codice: 'U8' },
+  { parentCodice: 'U', descrizione: 'Spese Bancarie',                         tipo: 'Uscita',  sezione: 'B', numero: 9,  codice: 'U9' },
+  { parentCodice: 'U', descrizione: 'Mutui/Finanziamenti',                    tipo: 'Uscita',  sezione: 'B', numero: 10, codice: 'U10' },
+  { parentCodice: 'U', descrizione: 'Assicurazioni',                          tipo: 'Uscita',  sezione: 'B', numero: 11, codice: 'U11' },
+  { parentCodice: 'U', descrizione: 'Affitti',                                tipo: 'Uscita',  sezione: 'B', numero: 12, codice: 'U12' },
+  { parentCodice: 'U', descrizione: 'Utenze',                                 tipo: 'Uscita',  sezione: 'B', numero: 13, codice: 'U13' },
+  { parentCodice: 'U', descrizione: 'Acquisto abbigliamento/gadget',          tipo: 'Uscita',  sezione: 'B', numero: 14, codice: 'U14' },
+  { parentCodice: 'U', descrizione: 'Acquisti bar',                           tipo: 'Uscita',  sezione: 'B', numero: 15, codice: 'U15' },
+  { parentCodice: 'U', descrizione: 'F24 ed altri tributi',                   tipo: 'Uscita',  sezione: 'B', numero: 16, codice: 'U16' },
+  { parentCodice: 'U', descrizione: 'Donazioni/Erogazioni liberali',          tipo: 'Uscita',  sezione: 'B', numero: 17, codice: 'U17' },
+  { parentCodice: 'U', descrizione: 'Restituzione prestito soci',             tipo: 'Uscita',  sezione: 'B', numero: 18, codice: 'U18' },
+];
+
 exports.getBySocieta = async (req, res) => {
     try {
         const { societa_id, solo_gruppi } = req.query;
@@ -93,6 +138,59 @@ exports.getBySocieta = async (req, res) => {
             ],
         });
         res.json(records);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// Crea i gruppi/sottogruppi standard ASD per una società (idempotente: salta quelli già esistenti)
+exports.initAsd = async (req, res) => {
+    try {
+        const { societa_id } = req.body;
+        if (!societa_id) return res.status(400).json({ error: 'societa_id obbligatorio' });
+
+        const created = [];
+
+        // 1. Crea gruppi radice (se non esistono già)
+        for (const g of ASD_GRUPPI_RADICE) {
+            const exists = await Gruppo.findOne({ where: { societa_id, codice: g.codice } });
+            if (!exists) {
+                const record = await Gruppo.create({
+                    societa_id,
+                    descrizione: g.descrizione,
+                    tipo: g.tipo,
+                    sezione: g.sezione,
+                    numero: null,
+                    codice: g.codice,
+                    gruppo_id: null,
+                    is_default: true,
+                });
+                created.push(record);
+            }
+        }
+
+        // 2. Crea sottogruppi (se non esistono già)
+        for (const s of ASD_SOTTOGRUPPI) {
+            const exists = await Gruppo.findOne({ where: { societa_id, codice: s.codice } });
+            if (!exists) {
+                const parent = await Gruppo.findOne({ where: { societa_id, codice: s.parentCodice } });
+                if (!parent) continue;
+                const record = await Gruppo.create({
+                    societa_id,
+                    descrizione: s.descrizione,
+                    tipo: s.tipo,
+                    sezione: s.sezione,
+                    numero: s.numero,
+                    codice: s.codice,
+                    gruppo_id: parent.id,
+                    is_default: true,
+                });
+                created.push(record);
+            }
+        }
+
+        res.status(201).json({ created: created.length });
     } catch (error) {
         console.error(error);
         res.status(500).json({ error: error.message });
