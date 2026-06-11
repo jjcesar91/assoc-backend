@@ -17,7 +17,7 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           script: |
             set -e
-            cd ${{ secrets.BACKEND_PATH }}
+            cd ${{ secrets.DEPLOY_PATH }}
             git pull origin master
             cd docker
             docker compose up -d --build
