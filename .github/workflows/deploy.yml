@@ -20,5 +20,6 @@ jobs:
             cd ${{ secrets.DEPLOY_PATH }}
             git pull origin master
             cd docker
+            docker ps -q --filter "network=docker_app_network" | xargs -r docker rm -f 2>/dev/null || true
             docker-compose down
             docker-compose up -d --build
