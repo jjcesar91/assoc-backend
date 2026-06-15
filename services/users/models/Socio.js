@@ -194,6 +194,62 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.STRING,
       allowNull: true
     },
+    // Campi extra associazione (da CSV Odoo)
+    anno_associativo: {
+      type: DataTypes.STRING(20),
+      allowNull: true
+    },
+    codice_affiliazione: {
+      type: DataTypes.STRING(50),
+      allowNull: true
+    },
+    scadenza_affiliazione: {
+      type: DataTypes.DATEONLY,
+      allowNull: true
+    },
+    costo_affiliazione: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: true
+    },
+    costo_tessera_base: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: true
+    },
+    costo_tessera_associativa: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: true
+    },
+    costo_tessera_completa: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: true
+    },
+    durata_consiglio_direttivo: {
+      type: DataTypes.INTEGER,
+      allowNull: true
+    },
+    scadenza_consiglio_direttivo: {
+      type: DataTypes.DATEONLY,
+      allowNull: true
+    },
+    etichette: {
+      type: DataTypes.TEXT,
+      allowNull: true
+    },
+    runts: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false
+    },
+    somministrazione: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false
+    },
+    sito_web: {
+      type: DataTypes.STRING(255),
+      allowNull: true
+    },
+
     // Accesso frontend socio
     frontend_enabled: {
       type: DataTypes.BOOLEAN,

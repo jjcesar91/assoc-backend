@@ -23,3 +23,7 @@ jobs:
             docker ps -q --filter "network=docker_app_network" | xargs -r docker rm -f 2>/dev/null || true
             docker-compose down
             docker-compose up -d --build
+            echo "Waiting for users_ms to complete migrations..."
+            sleep 20
+            docker logs users_ms 2>&1 | grep -E "\[entrypoint\]|Migration" || true
+            echo "Deploy completed."
