@@ -15,4 +15,9 @@ router.post('/:id/iscrizione', socioController.createIscrizione);
 router.get('/:id/iscrizione', socioController.getIscrizioni);
 router.delete('/:id/iscrizione', socioController.deleteIscrizione);
 
+router.get('/:id/contatti', socioController.getContatti);
+router.post('/:id/contatti', socioController.createContatto);
+router.put('/:id/contatti/:contattoId', socioController.updateContatto);
+router.delete('/:id/contatti/:contattoId', socioController.deleteContatto);
+
 module.exports = router;

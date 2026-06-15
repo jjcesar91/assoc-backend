@@ -1,4 +1,4 @@
-const { Socio, User, Societa, Comunicazione, Iscrizione } = require('../models');
+const { Socio, User, Societa, Comunicazione, Iscrizione, SocioContatto } = require('../models');
 const { Op } = require('sequelize');
 const { sendEmail } = require('../utils/mailService');
 
@@ -458,6 +458,71 @@ class SocioController {
             } else {
                  return res.status(404).json({ error: 'Iscrizione non trovata' });
             }
+        } catch (e) {
+            console.error(e);
+            return res.status(500).json({ error: e.message });
+        }
+    }
+
+    // ── Contatti ──────────────────────────────────────────────────────────────
+
+    async getContatti(req, res) {
+        try {
+            const contatti = await SocioContatto.findAll({
+                where: { socio_id: req.params.id },
+                order: [['nome', 'ASC']],
+            });
+            return res.json(contatti);
+        } catch (e) {
+            console.error(e);
+            return res.status(500).json({ error: e.message });
+        }
+    }
+
+    async createContatto(req, res) {
+        try {
+            const { nome, posizione_lavorativa, telefono, dispositivo_mobile, email } = req.body;
+            if (!nome) return res.status(400).json({ error: 'Nome obbligatorio' });
+            const contatto = await SocioContatto.create({
+                socio_id: req.params.id,
+                nome,
+                posizione_lavorativa: posizione_lavorativa || null,
+                telefono: telefono || null,
+                dispositivo_mobile: dispositivo_mobile || null,
+                email: email || null,
+            });
+            return res.status(201).json(contatto);
+        } catch (e) {
+            console.error(e);
+            return res.status(500).json({ error: e.message });
+        }
+    }
+
+    async updateContatto(req, res) {
+        try {
+            const { contattoId } = req.params;
+            const contatto = await SocioContatto.findOne({ where: { id: contattoId, socio_id: req.params.id } });
+            if (!contatto) return res.status(404).json({ error: 'Contatto non trovato' });
+            const { nome, posizione_lavorativa, telefono, dispositivo_mobile, email } = req.body;
+            if (nome !== undefined) contatto.nome = nome;
+            if (posizione_lavorativa !== undefined) contatto.posizione_lavorativa = posizione_lavorativa;
+            if (telefono !== undefined) contatto.telefono = telefono;
+            if (dispositivo_mobile !== undefined) contatto.dispositivo_mobile = dispositivo_mobile;
+            if (email !== undefined) contatto.email = email;
+            await contatto.save();
+            return res.json(contatto);
+        } catch (e) {
+            console.error(e);
+            return res.status(500).json({ error: e.message });
+        }
+    }
+
+    async deleteContatto(req, res) {
+        try {
+            const { contattoId } = req.params;
+            const deleted = await SocioContatto.destroy({ where: { id: contattoId, socio_id: req.params.id } });
+            if (!deleted) return res.status(404).json({ error: 'Contatto non trovato' });
+            return res.json({ ok: true });
         } catch (e) {
             console.error(e);
             return res.status(500).json({ error: e.message });
