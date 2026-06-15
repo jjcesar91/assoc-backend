@@ -120,6 +120,10 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.STRING,
       allowNull: true
     },
+    indirizzo_2: {
+      type: DataTypes.STRING(255),
+      allowNull: true
+    },
     comune: {
       type: DataTypes.STRING,
       allowNull: true
