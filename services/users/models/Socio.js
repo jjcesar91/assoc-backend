@@ -24,6 +24,11 @@ module.exports = (sequelize, DataTypes) => {
         foreignKey: 'socio_id',
         as: 'contatti'
       });
+      // Socio has many SocioStorico entries
+      Socio.hasMany(models.SocioStorico, {
+        foreignKey: 'socio_id',
+        as: 'storico'
+      });
     }
   }
   

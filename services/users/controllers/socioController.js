@@ -1,4 +1,6 @@
-const { Socio, User, Societa, Comunicazione, Iscrizione, SocioContatto } = require('../models');
+const { Socio, User, Societa, Comunicazione, Iscrizione, SocioContatto, SocioStorico } = require('../models');
+const fs = require('fs');
+const path = require('path');
 const { Op } = require('sequelize');
 const { sendEmail } = require('../utils/mailService');
 
@@ -523,6 +525,107 @@ class SocioController {
             const deleted = await SocioContatto.destroy({ where: { id: contattoId, socio_id: req.params.id } });
             if (!deleted) return res.status(404).json({ error: 'Contatto non trovato' });
             return res.json({ ok: true });
+        } catch (e) {
+            console.error(e);
+            return res.status(500).json({ error: e.message });
+        }
+    }
+
+    // ── Storico ──────────────────────────────────────────────────────────────
+
+    async getStorico(req, res) {
+        try {
+            const socio_id = req.params.id;
+            const entries = await SocioStorico.findAll({
+                where: { socio_id },
+                order: [['data_evento', 'DESC']],
+            });
+            return res.json(entries);
+        } catch (e) {
+            console.error(e);
+            return res.status(500).json({ error: e.message });
+        }
+    }
+
+    async createNota(req, res) {
+        try {
+            const socio_id = req.params.id;
+            const { testo } = req.body;
+            if (!testo || !testo.trim()) {
+                if (req.file) fs.unlink(req.file.path, () => {});
+                return res.status(400).json({ error: 'Il testo della nota è obbligatorio' });
+            }
+
+            const owner_label = req.user
+                ? (req.user.username || req.user.email || 'Operatore')
+                : 'Operatore';
+            const owner_id = req.user ? req.user.id : null;
+
+            const entry = await SocioStorico.create({
+                socio_id,
+                tipo: 'nota',
+                azione: testo.trim(),
+                owner_tipo: 'utente',
+                owner_id,
+                owner_label,
+                allegato_path: req.file ? req.file.path : null,
+                allegato_nome: req.file ? req.file.originalname : null,
+                data_evento: new Date(),
+            });
+
+            return res.status(201).json(entry);
+        } catch (e) {
+            if (req.file) fs.unlink(req.file.path, () => {});
+            console.error(e);
+            return res.status(500).json({ error: e.message });
+        }
+    }
+
+    async createStoricoEntry(req, res) {
+        try {
+            const socio_id = req.params.id;
+            const { tipo, azione, dettagli } = req.body;
+            if (!tipo || !azione) {
+                return res.status(400).json({ error: 'tipo e azione sono obbligatori' });
+            }
+
+            const owner_label = req.user
+                ? (req.user.username || req.user.email || 'Operatore')
+                : 'Sistema';
+            const owner_id = req.user ? req.user.id : null;
+            const owner_tipo = req.user ? 'utente' : 'sistema';
+
+            const entry = await SocioStorico.create({
+                socio_id,
+                tipo,
+                azione,
+                dettagli: dettagli || null,
+                owner_tipo,
+                owner_id,
+                owner_label,
+                data_evento: new Date(),
+            });
+
+            return res.status(201).json(entry);
+        } catch (e) {
+            console.error(e);
+            return res.status(500).json({ error: e.message });
+        }
+    }
+
+    async downloadAllegato(req, res) {
+        try {
+            const { id, storiciId } = req.params;
+            const entry = await SocioStorico.findOne({
+                where: { id: storiciId, socio_id: id },
+            });
+            if (!entry || !entry.allegato_path) {
+                return res.status(404).json({ error: 'Allegato non trovato' });
+            }
+            if (!fs.existsSync(entry.allegato_path)) {
+                return res.status(404).json({ error: 'File non trovato sul server' });
+            }
+            res.download(entry.allegato_path, entry.allegato_nome || 'allegato');
         } catch (e) {
             console.error(e);
             return res.status(500).json({ error: e.message });
