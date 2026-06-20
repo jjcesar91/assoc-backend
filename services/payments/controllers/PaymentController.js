@@ -443,3 +443,104 @@ exports.importVoci = async (req, res) => {
         res.status(500).json({ error: 'Errore durante l\'import delle voci' });
     }
 };
+
+// ── Import ordini da Odoo ───────────────────────────────────────────────────
+// Body: { societa_id, rows: [{ riferimento_ordine, cliente, stato_fattura, totale, data_ordine, etichette, addetto_vendite }] }
+// - riferimento_ordine "S00217" → numero 217 → numero_ricevuta "217/ANNO"
+// - stato_fattura "Da fatturare" → proforma, "Interamente fatturato" → pagamento
+// - Abort se qualsiasi numero_ricevuta calcolato esiste già per la societa
+exports.importOdooOrdini = async (req, res) => {
+    try {
+        const { societa_id, rows } = req.body;
+        if (!societa_id || !Array.isArray(rows) || rows.length === 0) {
+            return res.status(400).json({ error: 'societa_id e rows sono obbligatori' });
+        }
+
+        const { tipo, dataInizio } = await fetchSocietaTipo(societa_id, req.headers['authorization']);
+        const tipoEffettivo = tipo || 'solare';
+
+        // Parsa ogni riferimento_ordine e calcola il numero_ricevuta formattato
+        const parsed = rows.map(row => {
+            const refStr = (row.riferimento_ordine || '').trim();
+            const numStr = refStr.replace(/^[Ss]+0*/,'');
+            const numero = parseInt(numStr, 10);
+            if (isNaN(numero) || numero <= 0) {
+                throw new Error(`Riferimento ordine non valido: "${refStr}"`);
+            }
+            const numeroRicevuta = formatNumeroRicevuta(numero, tipoEffettivo, dataInizio, row.data_ordine);
+            return { ...row, _numero: numero, _numeroRicevuta: numeroRicevuta };
+        });
+
+        // Controlla duplicati interni al file
+        const ricevuteNelFile = parsed.map(r => r._numeroRicevuta);
+        const duplicatiInterni = ricevuteNelFile.filter((v, i) => ricevuteNelFile.indexOf(v) !== i);
+        if (duplicatiInterni.length > 0) {
+            return res.status(409).json({
+                error: 'Numeri ricevuta duplicati nel file',
+                conflitti: [...new Set(duplicatiInterni)],
+            });
+        }
+
+        // Controlla conflitti con il database
+        const esistenti = await Payment.findAll({
+            where: {
+                societa_id,
+                numero_ricevuta: { [Op.in]: ricevuteNelFile },
+            },
+            attributes: ['numero_ricevuta'],
+        });
+        if (esistenti.length > 0) {
+            return res.status(409).json({
+                error: 'Numeri ricevuta già presenti nel database',
+                conflitti: esistenti.map(p => p.numero_ricevuta),
+            });
+        }
+
+        // Recupera soci per match nome → socio_id
+        let sociByName = {};
+        try {
+            const usersUrl = process.env.USERS_SERVICE_URL || 'http://users_ms:3000';
+            const headers = req.headers['authorization'] ? { 'Authorization': req.headers['authorization'] } : {};
+            const socioRes = await fetch(`${usersUrl}/api/soci?societa_id=${societa_id}`, { headers });
+            if (socioRes.ok) {
+                const soci = await socioRes.json();
+                if (Array.isArray(soci)) {
+                    soci.forEach(s => {
+                        const key = (s.ragione_sociale || '').toLowerCase().trim();
+                        if (key) sociByName[key] = s.id;
+                    });
+                }
+            }
+        } catch (e) {
+            console.error('importOdooOrdini: errore lookup soci:', e.message);
+        }
+
+        // Costruisce i record da inserire
+        const toInsert = parsed.map(row => {
+            const clienteKey = (row.cliente || '').toLowerCase().trim();
+            const socio_id = sociByName[clienteKey] || null;
+            const tipo_documento = row.stato_fattura === 'Interamente fatturato' ? 'pagamento' : 'proforma';
+
+            return {
+                societa_id,
+                intestatario: row.cliente || null,
+                socio_id,
+                importo: parseFloat(row.totale) || 0,
+                data_pagamento: row.data_ordine || null,
+                data_ricevuta: tipo_documento === 'pagamento' ? row.data_ordine || null : null,
+                numero_ricevuta: row._numeroRicevuta,
+                progressivo_stagione: row._numero,
+                tipo_documento,
+                stato_pagamento: tipo_documento === 'pagamento' ? '1. VALIDO CON RICEVUTA' : null,
+                utente_nome: row.addetto_vendite || null,
+                etichette: row.etichette || null,
+            };
+        });
+
+        const created = await Payment.bulkCreate(toInsert, { returning: true });
+        res.status(201).json({ count: created.length });
+    } catch (err) {
+        console.error('importOdooOrdini error:', err);
+        res.status(500).json({ error: err.message || 'Errore durante l\'import degli ordini Odoo' });
+    }
+};

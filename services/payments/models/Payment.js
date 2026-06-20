@@ -58,6 +58,10 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: true,
       defaultValue: 'pagamento',
     },
+    etichette: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
   }, {
     sequelize,
     modelName: 'Payment',
