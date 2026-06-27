@@ -1,109 +1,23 @@
 # Mappa Endpoint e Protezione JWT
 
-Stato aggiornato dopo la patch di enforcement JWT sui microservizi.
+> ⚠️ Questo file è un **puntatore**. La mappa statica precedente tendeva a
+> diventare obsoleta (mancavano route reali). La fonte aggiornata è generata
+> dall'indice in `skills/`:
 
-## Regole globali
+```bash
+python3 ../skills/tools/query.py endpoints            # tutti i servizi
+python3 ../skills/tools/query.py endpoints payments   # un singolo servizio
+```
 
-- `401` = token assente
-- `403` = token non valido o scaduto
-- Header richiesto: `Authorization: Bearer <token>`
-- Endpoints `health` restano pubblici
+L'output mostra per ogni route: metodo, path e livello di protezione
+(`🌐 pubblico` / `🔐 jwt` / `🔒 admin` / `🔒 superuser`). Rigenera l'indice con
+`python3 skills/tools/scan.py` dopo ogni modifica alle route.
 
-## Gateway Nginx
+## Regole globali (stabili)
 
-- Inoltra `Authorization` verso tutti i servizi backend.
-- File: `backend/docker/nginx.conf`
-
-## Auth Service (`/auth/api`)
-
-### Pubblici
-
-- `GET /health`
-- `POST /register`
-- `POST /login`
-- `POST /refresh-token`
-
-### Protetti
-
-- `GET /me`
-- `PUT /me`
-- `PUT /password`
-- `GET /admin/users`
-- `POST /admin/users`
-- `PUT /admin/users/:id`
-- `PATCH /admin/users/:id/toggle-attivo`
-- `DELETE /admin/users/:id`
-- `POST /admin/users/:id/impersonate`
-- `GET /admin/users/:id/features`
-- `PUT /admin/users/:id/features`
-- `POST /socio-access`
-- `DELETE /socio-access/:socio_ref_id`
-- `POST /socio-access/:socio_ref_id/reset-password`
-
-## Users Service (`/users/api`)
-
-### Pubblici
-
-- `GET /health`
-
-### Protetti
-
-- Tutte le route sotto `/soci`
-- Tutte le route sotto `/societa`
-
-## Documents Service (`/documents/api`)
-
-### Pubblici
-
-- `GET /health`
-
-### Protetti
-
-- Tutte le route sotto `/moduli`
-
-## Products Service (`/products/api`)
-
-### Pubblici
-
-- `GET /health`
-
-### Protetti
-
-- Tutte le route prodotto (`/` e `/:id`)
-
-## Payments Service (`/payments/api`)
-
-### Pubblici
-
-- `GET /health`
-
-### Protetti
-
-- Tutte le route conti
-- Tutte le route gruppi
-- Tutte le route fornitori
-- Tutte le route pagamenti (`/`, `/bulk`, `/import-voci`, `/:id`, `/:id/annulla`, `/next-numero`)
-
-## Activities Service (`/activities/api`)
-
-### Pubblici
-
-- `GET /health`
-
-### Protetti
-
-- Tutte le route sotto `/strutture`
-- Tutte le route sotto `/aree`
-- Tutte le route sotto `/staff`
-- Tutte le route sotto `/attivita`
-- Tutte le route sotto `/corsi`
-
-## Template Service (`/template/api`)
-
-### Pubblici
-
-- `GET /health`
-
-### Protetti
-
-- Nessuna route business presente al momento.
+- `401` = token assente o scaduto · `403` = token non valido o permessi mancanti.
+- Header richiesto: `Authorization: Bearer <token>` (inoltrato da Nginx a tutti i servizi).
+- `GET /health` è sempre pubblico in ogni servizio.
+- In **auth** sono pubblici anche `POST /register`, `POST /login`, `POST /refresh-token`.
+- Negli altri servizi la protezione è globale via `router.use(authenticateToken)`
+  dopo `/health`; le route admin aggiungono `requireAdmin` / `requireSuperuser`.
