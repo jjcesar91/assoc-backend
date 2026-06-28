@@ -328,9 +328,11 @@ class SocioController {
     }
 
     // Check if email exists
+    // Il conflitto è segnalato solo tra soci della STESSA società (societaId) ed
+    // è puramente informativo lato client: non blocca l'inserimento del socio.
     async checkEmail(req, res) {
         try {
-            const { email, excludeId } = req.body;
+            const { email, excludeId, societaId } = req.body;
             if (!email) {
                 return res.status(400).json({ message: 'Email is required' });
             }
@@ -338,6 +340,10 @@ class SocioController {
             const whereClause = { email: email };
             if (excludeId) {
                 whereClause.id = { [Op.ne]: excludeId };
+            }
+            // Restringe il controllo ai soci della stessa società.
+            if (societaId) {
+                whereClause.societa_id = societaId;
             }
 
             // Check if email exists in Socio
@@ -354,22 +360,28 @@ class SocioController {
                 });
             }
 
-            // Check in User as fallback
+            // Check in User as fallback: rilevante solo se l'account utente è
+            // collegato a un socio della stessa società.
             const user = await User.findOne({
                 where: { email: email },
-                include: [{ model: Socio, as: 'socioProfile', attributes: ['id'] }]
+                include: [{ model: Socio, as: 'socioProfile', attributes: ['id', 'societa_id', 'nome', 'cognome'] }]
             });
 
-            if (user) {
-                // If the user found is linked to the socio we are excluding, it's not a conflict
-                if (excludeId && user.socioProfile && user.socioProfile.id == excludeId) {
+            if (user && user.socioProfile) {
+                const profile = user.socioProfile;
+                // Se l'account è collegato al socio che stiamo escludendo, non è un conflitto
+                if (excludeId && profile.id == excludeId) {
+                    return res.status(200).json({ exists: false });
+                }
+                // Se è collegato a un socio di un'altra società, non è un conflitto qui
+                if (societaId && profile.societa_id != societaId) {
                     return res.status(200).json({ exists: false });
                 }
 
                 return res.status(200).json({
                     exists: true,
-                    nome: 'Utente',
-                    cognome: 'Registrato'
+                    nome: profile.nome || 'Utente',
+                    cognome: profile.cognome || 'Registrato'
                 });
             }
 
