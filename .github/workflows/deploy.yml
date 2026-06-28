@@ -19,6 +19,12 @@ jobs:
             set -e
             cd ${{ secrets.DEPLOY_PATH }}
 
+            # Builda con il builder classico: le immagini cosi' generate includono
+            # il metadato "ContainerConfig" richiesto da docker-compose v1, evitando
+            # il bug "KeyError: 'ContainerConfig'" durante la ricreazione dei container.
+            export DOCKER_BUILDKIT=0
+            export COMPOSE_DOCKER_CLI_BUILD=0
+
             BEFORE=$(git rev-parse HEAD)
             git pull origin master
             AFTER=$(git rev-parse HEAD)
@@ -36,10 +42,20 @@ jobs:
 
             REBUILD_USERS=false
 
+            # Ricreazione robusta al bug di docker-compose v1 "KeyError: 'ContainerConfig'":
+            # si rimuovono i container prima di ricrearli, cosi' compose non tenta di
+            # ereditare i volumi dal vecchio container (i volumi named persistono comunque).
+            # $@ = elenco servizi (vuoto = tutti). --no-deps e' innocuo quando $@ e' vuoto.
+            recreate() {
+              docker-compose build "$@"
+              docker-compose rm -sf "$@" || true
+              docker-compose up -d --no-deps "$@"
+            }
+
             # Modifiche all'infrastruttura docker (compose, nginx.conf, ...) => rebuild completo
             if echo "$CHANGED" | grep -qE '^docker/'; then
               echo "Modifiche all'infrastruttura docker: rebuild completo."
-              docker-compose up -d --build
+              recreate
               docker-compose restart nginx || true
               REBUILD_USERS=true
             else
@@ -50,7 +66,7 @@ jobs:
                 exit 0
               fi
               echo "Microservizi da ricostruire: $SERVICES"
-              docker-compose up -d --build --no-deps $SERVICES
+              recreate $SERVICES
               if echo "$SERVICES" | grep -qw users_ms; then
                 REBUILD_USERS=true
               fi

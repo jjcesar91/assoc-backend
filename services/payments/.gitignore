@@ -1,0 +1,5 @@
+# Dipendenze
+node_modules/
+
+# Ricevute caricate dagli utenti (persistite su volume in produzione, non versionate)
+uploads/
