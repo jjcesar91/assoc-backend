@@ -74,9 +74,14 @@ class SocioController {
                 return res.status(400).json({ error: "L'oggetto è obbligatorio per le email" });
             }
 
-            // Load socio with societa to determine SMTP config and recipient address
+            // Load socio with societa to determine SMTP config and recipient address.
+            // Includiamo anche l'utente collegato: l'email può essere registrata
+            // sull'account utente invece che sul socio (stessa precedenza della scheda).
             const socio = await Socio.findByPk(socio_id, {
-                include: [{ model: Societa, as: 'societa' }]
+                include: [
+                    { model: Societa, as: 'societa' },
+                    { model: User, as: 'user', attributes: ['email'] },
+                ]
             });
 
             if (!socio) {
@@ -90,13 +95,14 @@ class SocioController {
             let invioError = null;
 
             if (tipo === 'EMAIL') {
-                if (!socio.email) {
+                const destinatarioEmail = socio.email || socio.user?.email || null;
+                if (!destinatarioEmail) {
                     return res.status(400).json({ error: 'Il socio non ha un indirizzo email registrato' });
                 }
 
                 try {
                     const result = await sendEmail({
-                        to: socio.email,
+                        to: destinatarioEmail,
                         subject: oggetto,
                         html: testo,
                         societa: socio.societa || null,
