@@ -274,6 +274,12 @@ class SocioController {
             // Handle optional fields: convert empty strings to null to avoid database errors
             // specifically for dates like scadenza_certificato or data_scadenza_tesseramento
             const updateData = { ...req.body };
+
+            // user_id è gestito esclusivamente dal flusso "accesso frontend": non deve mai
+            // essere modificato dall'aggiornamento anagrafico, altrimenti un valore fittizio
+            // viola la foreign key socios_user_id_fkey (utente inesistente).
+            delete updateData.user_id;
+
             Object.keys(updateData).forEach(key => {
                 if (updateData[key] === '') {
                     updateData[key] = null;
