@@ -18,12 +18,49 @@ jobs:
           script: |
             set -e
             cd ${{ secrets.DEPLOY_PATH }}
+
+            BEFORE=$(git rev-parse HEAD)
             git pull origin master
+            AFTER=$(git rev-parse HEAD)
+
+            if [ "$BEFORE" = "$AFTER" ]; then
+              echo "Nessuna modifica rilevata: nessun rebuild necessario."
+              exit 0
+            fi
+
+            CHANGED=$(git diff --name-only "$BEFORE" "$AFTER")
+            echo "File modificati:"
+            echo "$CHANGED"
+
             cd docker
-            docker ps -q --filter "network=docker_app_network" | xargs -r docker rm -f 2>/dev/null || true
-            docker-compose down
-            docker-compose up -d --build
-            echo "Waiting for users_ms to complete migrations..."
-            sleep 20
-            docker logs users_ms 2>&1 | grep -E "\[entrypoint\]|Migration" || true
+
+            REBUILD_USERS=false
+
+            # Modifiche all'infrastruttura docker (compose, nginx.conf, ...) => rebuild completo
+            if echo "$CHANGED" | grep -qE '^docker/'; then
+              echo "Modifiche all'infrastruttura docker: rebuild completo."
+              docker-compose up -d --build
+              docker-compose restart nginx || true
+              REBUILD_USERS=true
+            else
+              # Mappa i path services/<nome>/... sul relativo servizio compose <nome>_ms
+              SERVICES=$(echo "$CHANGED" | sed -n 's#^services/\([^/]*\)/.*#\1_ms#p' | sort -u)
+              if [ -z "$SERVICES" ]; then
+                echo "Nessun microservizio toccato: nessun rebuild necessario."
+                exit 0
+              fi
+              echo "Microservizi da ricostruire: $SERVICES"
+              docker-compose up -d --build --no-deps $SERVICES
+              if echo "$SERVICES" | grep -qw users_ms; then
+                REBUILD_USERS=true
+              fi
+            fi
+
+            # Mostra i log delle migrazioni solo se users_ms e' stato ricostruito
+            if [ "$REBUILD_USERS" = "true" ]; then
+              echo "Waiting for users_ms to complete migrations..."
+              sleep 20
+              docker logs users_ms 2>&1 | grep -E "\[entrypoint\]|Migration" || true
+            fi
+
             echo "Deploy completed."
