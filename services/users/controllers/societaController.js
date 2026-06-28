@@ -178,17 +178,23 @@ class SocietaController {
                 tipo_anno_associativo, data_inizio_anno_associativo,
                 footer_text, email_text, receipt_footer_text, // Added template fields
                 quota_tesseramento_unico,  // Impostazione quota+tesseramento unico
-                tipo_associazione  // ASD o APS
+                tipo_associazione,  // ASD o APS
+                // Comunicazioni ordini
+                com_proforma_stato, com_proforma_oggetto, com_proforma_testo,
+                com_pagamento_stato, com_pagamento_oggetto, com_pagamento_testo
             } = req.body;
-            
+
             await societa.update({
-                denominazione, codice_fiscale, partita_iva, codice_sdi, pec, email, telefono, 
-                indirizzo, comune, cap, cognome_rappr_legale, nome_rappr_legale, 
+                denominazione, codice_fiscale, partita_iva, codice_sdi, pec, email, telefono,
+                indirizzo, comune, cap, cognome_rappr_legale, nome_rappr_legale,
                 alias_sms, alias_email,
                 tipo_anno_associativo, data_inizio_anno_associativo,
                 footer_text, email_text, receipt_footer_text, // Added template fields
                 quota_tesseramento_unico,  // Impostazione quota+tesseramento unico
-                tipo_associazione  // ASD o APS
+                tipo_associazione,  // ASD o APS
+                // Comunicazioni ordini
+                com_proforma_stato, com_proforma_oggetto, com_proforma_testo,
+                com_pagamento_stato, com_pagamento_oggetto, com_pagamento_testo
             }, { transaction });
 
             if (affiliazioni && Array.isArray(affiliazioni)) {

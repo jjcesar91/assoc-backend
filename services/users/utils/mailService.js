@@ -110,9 +110,10 @@ function buildSmtpSnapshot(societa) {
  * @param {string} options.subject - Email subject
  * @param {string} options.html - HTML body
  * @param {Object|null} options.societa - Societa instance (for custom SMTP lookup)
+ * @param {Array<{filename: string, content: string, encoding?: string, contentType?: string}>} [options.attachments] - Allegati (es. ricevuta PDF in base64)
  * @returns {{ fromEmail: string, fromName: string, smtpParams: Object }}
  */
-async function sendEmail({ to, subject, html, societa }) {
+async function sendEmail({ to, subject, html, societa, attachments }) {
     const transporter = buildTransporter(societa);
     const from = buildFromAddress(societa);
     const replyTo = buildReplyTo(societa);
@@ -127,6 +128,15 @@ async function sendEmail({ to, subject, html, societa }) {
 
     if (replyTo) {
         mailOptions.replyTo = replyTo;
+    }
+
+    if (Array.isArray(attachments) && attachments.length > 0) {
+        mailOptions.attachments = attachments.map(a => ({
+            filename: a.filename,
+            content: a.content,
+            encoding: a.encoding || 'base64',
+            contentType: a.contentType || 'application/pdf'
+        }));
     }
 
     await transporter.sendMail(mailOptions);

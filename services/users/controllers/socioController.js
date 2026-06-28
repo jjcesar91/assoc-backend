@@ -64,7 +64,7 @@ class SocioController {
     async createComunicazione(req, res) {
         try {
             const socio_id = req.params.id;
-            const { tipo, oggetto, testo } = req.body;
+            const { tipo, oggetto, testo, allegati } = req.body;
 
             // Basic validation
             if (!socio_id || !tipo || !testo) {
@@ -99,7 +99,8 @@ class SocioController {
                         to: socio.email,
                         subject: oggetto,
                         html: testo,
-                        societa: socio.societa || null
+                        societa: socio.societa || null,
+                        attachments: Array.isArray(allegati) ? allegati : undefined
                     });
                     isInviato = true;
                     mittente_email = result.fromEmail;

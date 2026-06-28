@@ -23,6 +23,14 @@ module.exports = (sequelize, DataTypes) => {
     modalita_pagamento: {
       type: DataTypes.STRING(50),
       allowNull: true
+    },
+    iban: {
+      type: DataTypes.STRING(34),
+      allowNull: true
+    },
+    istruzioni_pagamento: {
+      type: DataTypes.TEXT,
+      allowNull: true
     }
   }, {
     sequelize,

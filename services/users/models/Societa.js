@@ -129,6 +129,34 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.STRING,
       allowNull: false,
       defaultValue: 'ASD'
+    },
+    // --- Comunicazioni ordini ---
+    // Stati ammessi: 'NON_ATTIVA' | 'CHIEDI' | 'AUTOMATICA'
+    com_proforma_stato: {
+      type: DataTypes.STRING(20),
+      allowNull: false,
+      defaultValue: 'NON_ATTIVA'
+    },
+    com_proforma_oggetto: {
+      type: DataTypes.STRING,
+      allowNull: true
+    },
+    com_proforma_testo: {
+      type: DataTypes.TEXT,
+      allowNull: true
+    },
+    com_pagamento_stato: {
+      type: DataTypes.STRING(20),
+      allowNull: false,
+      defaultValue: 'NON_ATTIVA'
+    },
+    com_pagamento_oggetto: {
+      type: DataTypes.STRING,
+      allowNull: true
+    },
+    com_pagamento_testo: {
+      type: DataTypes.TEXT,
+      allowNull: true
     }
   }, {
     sequelize,
