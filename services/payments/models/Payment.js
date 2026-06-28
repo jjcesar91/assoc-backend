@@ -62,6 +62,19 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.STRING,
       allowNull: true,
     },
+    // Stato ricevuta a livello di ordine (unico, condiviso da tutti i token dell'ordine)
+    ricevuta_file_path: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    ricevuta_file_nome: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    ricevuta_uploaded_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
   }, {
     sequelize,
     modelName: 'Payment',

@@ -235,6 +235,7 @@ services:
     volumes:
       - ../services/payments:/app
       - /app/node_modules
+      - uploads_data:/app/uploads
     networks:
       - app_network
 
