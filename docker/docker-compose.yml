@@ -290,20 +290,8 @@ services:
     networks:
       - app_network
 
-  # --- Frontend ---
-  frontend:
-    build: ../../frontend
-    container_name: frontend
-    ports:
-      - "5173:5173"
-    environment:
-      - VITE_API_TARGET=http://nginx
-      - CHOKIDAR_USEPOLLING=true
-    volumes:
-      - ../../frontend:/app
-      - /app/node_modules
-    networks:
-      - app_network
+  # NB: il frontend e' stato spostato nel repo assoc-frontend
+  # (assoc-frontend/docker/docker-compose.yml), avviato dalla sua GitHub Action.
 
 volumes:
   uploads_data:
