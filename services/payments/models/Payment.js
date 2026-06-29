@@ -39,6 +39,7 @@ module.exports = (sequelize, DataTypes) => {
     },
     utente_id: DataTypes.INTEGER,
     utente_nome: DataTypes.STRING, // to store the operator name easily
+    modificato_da: DataTypes.STRING, // operatore dell'ultima modifica (updatedAt = data)
     socio_id: DataTypes.INTEGER, // FK to soci table (for direct lookup)
     fornitore_id: DataTypes.INTEGER, // FK to fornitori table
     product_id: DataTypes.INTEGER, // FK to Products table (direct product reference)

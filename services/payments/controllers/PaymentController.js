@@ -233,7 +233,8 @@ exports.create = async (req, res) => {
 exports.update = async (req, res) => {
     try {
         const { id } = req.params;
-        const [updated] = await Payment.update(req.body, { where: { id } });
+        const patch = { ...req.body, modificato_da: req.user?.username || req.body.modificato_da || null };
+        const [updated] = await Payment.update(patch, { where: { id } });
         if (updated) {
             const updatedPayment = await Payment.findByPk(id);
             return res.json(updatedPayment);
@@ -350,6 +351,7 @@ exports.convertiProforma = async (req, res) => {
             progressivo_stagione: nextProgressivo,
             numero_ricevuta,
             data_ricevuta: dataRicevutaEff,
+            modificato_da: req.user?.username || null,
         });
 
         const updated = await Payment.findByPk(id);
@@ -364,7 +366,7 @@ exports.annulla = async (req, res) => {
     try {
         const { id } = req.params;
         const [updated] = await Payment.update(
-            { stato_pagamento: '3. ANNULLATO CON RICEVUTA' },
+            { stato_pagamento: '3. ANNULLATO CON RICEVUTA', modificato_da: req.user?.username || null },
             { where: { id } }
         );
         if (updated) {
@@ -429,6 +431,7 @@ exports.importVoci = async (req, res) => {
                     quote: quoteStr,
                     importo: totalImporto,
                     ...(allTypes ? { quote_types: allTypes } : {}),
+                    modificato_da: req.user?.username || null,
                 });
 
                 results.updated.push(numero_ricevuta);
