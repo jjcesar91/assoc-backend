@@ -155,6 +155,34 @@ exports.updatePassword = async (req, res) => {
     }
 };
 
+// ── Interno: email destinatari notifiche (admin società + superuser) ─────────
+// GET /api/internal/admin-emails?societaId=X  (protetto da secret interno)
+exports.internalAdminEmails = async (req, res) => {
+    try {
+        const { Op } = require('sequelize');
+        const { societaId } = req.query;
+        if (!societaId) {
+            return res.status(400).json({ error: 'societaId è obbligatorio' });
+        }
+        const parsedSocietaId = parseInt(societaId, 10);
+
+        const users = await User.findAll({
+            where: {
+                attivo: true,
+                [Op.or]: [
+                    { role: 'admin', societaId: parsedSocietaId },
+                    { role: 'superuser' },
+                ],
+            },
+            attributes: ['email', 'nome', 'cognome', 'role'],
+            order: [['id', 'ASC']],
+        });
+        res.json(users);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
 // ── Admin: gestione utenti ──────────────────────────────────────────────────
 
 exports.adminListUsers = async (req, res) => {

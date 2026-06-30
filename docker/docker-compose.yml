@@ -71,6 +71,7 @@ services:
       - SERVICE_NAME=auth-service
       - JWT_SECRET=super_secret_key_change_me
       - JWT_REFRESH_SECRET=super_secret_refresh_key_change_me
+      - INTERNAL_API_SECRET=internal_secret_change_me
     ports:
       - "3002:3000"
       - "9230:9229"
@@ -108,6 +109,7 @@ services:
       - DB_NAME=users_db
       - SERVICE_NAME=users-service
       - JWT_SECRET=super_secret_key_change_me
+      - INTERNAL_API_SECRET=internal_secret_change_me
       - SMTP_HOST=mail.webassociazioni.it
       - SMTP_PORT=465
       - SMTP_SECURE=true
@@ -227,6 +229,8 @@ services:
       - DB_NAME=payments_db
       - SERVICE_NAME=payments-service
       - JWT_SECRET=super_secret_key_change_me
+      - INTERNAL_API_SECRET=internal_secret_change_me
+      - USERS_SERVICE_URL=http://users_ms:3000
     ports:
       - "3006:3000"
       - "9234:9229"

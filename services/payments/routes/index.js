@@ -70,6 +70,9 @@ router.use(authenticateToken);
 // Generazione token (autenticata) — chiamata all'invio della comunicazione proforma
 router.post('/ricevuta-tokens', RicevutaController.createToken);
 
+// Download autenticato della ricevuta caricata (operatore/admin)
+router.get('/:id/ricevuta-file', RicevutaController.downloadByPayment);
+
 router.get('/conti', ContoController.getBySocieta);
 router.post('/conti', ContoController.create);
 router.put('/conti/:id', ContoController.update);

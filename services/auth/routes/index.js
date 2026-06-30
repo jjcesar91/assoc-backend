@@ -3,10 +3,14 @@ const router = express.Router();
 const authController = require('../controllers/authController');
 const authenticateToken = require('../middleware/auth');
 const { requireAdmin } = require('../middleware/auth');
+const requireInternal = require('../middleware/requireInternal');
 
 router.get('/health', (req, res) => {
     res.json({ status: 'OK', service: 'auth-service' });
 });
+
+// Interno (service-to-service): destinatari notifiche
+router.get('/internal/admin-emails', requireInternal, authController.internalAdminEmails);
 
 router.post('/register', authController.register);
 router.post('/login', authController.login);

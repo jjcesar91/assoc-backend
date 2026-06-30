@@ -124,6 +124,26 @@ const RicevutaController = {
     return doUpload(req, res, { allowReplace: true });
   },
 
+  // --- AUTENTICATA: download del file da parte di operatore/admin ---
+  // GET /api/:id/ricevuta-file
+  downloadByPayment: async (req, res) => {
+    try {
+      const { id } = req.params;
+      const payment = await Payment.findByPk(id);
+      if (!payment || !payment.ricevuta_file_path) return res.sendStatus(404);
+      // Scope: solo stessa società dell'operatore (i superuser non hanno vincolo)
+      if (req.user?.role !== 'superuser' && String(payment.societa_id) !== String(req.user?.societaId)) {
+        return res.sendStatus(403);
+      }
+      const abs = path.join('/app', payment.ricevuta_file_path);
+      if (!fs.existsSync(abs)) return res.sendStatus(404);
+      return res.download(abs, payment.ricevuta_file_nome || path.basename(abs));
+    } catch (err) {
+      console.error('Errore download ricevuta (auth):', err);
+      return res.sendStatus(500);
+    }
+  },
+
   // --- PUBBLICA: download/anteprima del file caricato ---
   // GET /api/public/ricevuta/:token/file
   getFile: async (req, res) => {
@@ -214,6 +234,14 @@ async function doUpload(req, res, { allowReplace }) {
     record.used_at = now;
     await record.save();
 
+    // Notifica agli amministratori della società + superuser (solo al primo
+    // caricamento, non sulle sostituzioni). Non blocca la risposta.
+    if (!allowReplace) {
+      notifyRicevutaUploaded(payment).catch((e) =>
+        console.error('Notifica ricevuta caricata fallita:', e.message)
+      );
+    }
+
     return res.json({
       status: 'uploaded',
       editable: true,
@@ -223,6 +251,43 @@ async function doUpload(req, res, { allowReplace }) {
     console.error('Errore upload ricevuta:', err);
     cleanupUploaded();
     return res.status(500).json({ error: 'Errore durante il caricamento' });
+  }
+}
+
+// Notifica al servizio users che una ricevuta è stata caricata.
+// Il servizio users si occupa di risolvere i destinatari (admin società + superuser)
+// e di inviare l'email. Chiamata interna protetta da secret condiviso.
+async function notifyRicevutaUploaded(payment) {
+  const usersUrl = process.env.USERS_SERVICE_URL || 'http://users_ms:3000';
+  const secret = process.env.INTERNAL_API_SECRET || 'internal_secret_change_me';
+
+  const body = {
+    societa_id: payment.societa_id,
+    ordine: {
+      id: payment.id,
+      numero: payment.numero_ricevuta || `#${payment.id}`,
+      importo: formatImporto(payment.importo),
+      intestatario: payment.intestatario || '',
+      tipo_documento: payment.tipo_documento || null,
+    },
+    socio: {
+      id: payment.socio_id || null,
+      nominativo: payment.intestatario || '',
+      codice_fiscale: payment.codice_fiscale || null,
+    },
+    ricevuta: {
+      nome_file: payment.ricevuta_file_nome || '',
+      uploaded_at: payment.ricevuta_uploaded_at,
+    },
+  };
+
+  const res = await fetch(`${usersUrl}/api/internal/ricevuta-uploaded`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-internal-secret': secret },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new Error(`users-service ha risposto ${res.status}`);
   }
 }
 
