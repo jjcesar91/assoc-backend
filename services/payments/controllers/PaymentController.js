@@ -166,7 +166,7 @@ exports.getAll = async (req, res) => {
 
 exports.create = async (req, res) => {
     try {
-        const { items, emetti_ricevuta, anno_ricevuta, ...commonFields } = req.body;
+        const { items, emetti_ricevuta, anno_ricevuta, progressivo_iniziale, ...commonFields } = req.body;
 
         let progressivo_stagione = null;
         let numero_ricevuta = commonFields.numero_ricevuta || null;
@@ -183,7 +183,17 @@ exports.create = async (req, res) => {
                 commonFields.societa_id, tipoEffettivo, annoStartStr, annoEndStr
             );
 
-            const nextProgressivo = lastProgressivo + 1;
+            // Numero di partenza scelto dall'operatore: valido solo per la PRIMA
+            // ricevuta dell'anno (lastProgressivo === 0). Negli altri casi si prosegue
+            // sempre dal progressivo esistente, ignorando eventuali valori inviati.
+            let nextProgressivo = lastProgressivo + 1;
+            if (lastProgressivo === 0 && progressivo_iniziale != null) {
+                const startNum = parseInt(progressivo_iniziale, 10);
+                if (!isNaN(startNum) && startNum >= 1) {
+                    nextProgressivo = startNum;
+                }
+            }
+
             progressivo_stagione = nextProgressivo;
             numero_ricevuta = formatNumeroRicevuta(nextProgressivo, tipoEffettivo, dataInizio, commonFields.data_ricevuta);
         }
@@ -322,7 +332,7 @@ exports.bulk = async (req, res) => {
 exports.convertiProforma = async (req, res) => {
     try {
         const { id } = req.params;
-        const { anno_ricevuta, data_ricevuta } = req.body;
+        const { anno_ricevuta, data_ricevuta, progressivo_iniziale } = req.body;
 
         const payment = await Payment.findByPk(id);
         if (!payment) return res.status(404).json({ error: 'Payment not found' });
@@ -341,7 +351,15 @@ exports.convertiProforma = async (req, res) => {
             payment.societa_id, tipoEffettivo, annoStartStr, annoEndStr
         );
 
-        const nextProgressivo = lastProgressivo + 1;
+        // Numero di partenza scelto dall'operatore: valido solo per la PRIMA
+        // ricevuta dell'anno (lastProgressivo === 0).
+        let nextProgressivo = lastProgressivo + 1;
+        if (lastProgressivo === 0 && progressivo_iniziale != null) {
+            const startNum = parseInt(progressivo_iniziale, 10);
+            if (!isNaN(startNum) && startNum >= 1) {
+                nextProgressivo = startNum;
+            }
+        }
         const dataRicevutaEff = data_ricevuta || payment.data_pagamento;
         const numero_ricevuta = formatNumeroRicevuta(nextProgressivo, tipoEffettivo, dataInizio, dataRicevutaEff);
 
