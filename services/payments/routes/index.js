@@ -5,6 +5,7 @@ const router = express.Router();
 const PaymentController = require('../controllers/PaymentController');
 const ContoController = require('../controllers/ContoController');
 const GruppoController = require('../controllers/GruppoController');
+const VociConfigController = require('../controllers/VociConfigController');
 const FornitoreController = require('../controllers/FornitoreController');
 const RicevutaController = require('../controllers/RicevutaController');
 const authenticateToken = require('../middleware/auth');
@@ -84,6 +85,9 @@ router.post('/gruppi/init-asd', GruppoController.initAsd);
 router.post('/gruppi', GruppoController.create);
 router.put('/gruppi/:id', GruppoController.update);
 router.delete('/gruppi/:id', GruppoController.delete);
+
+router.get('/voci-config', VociConfigController.getBySocieta);
+router.put('/voci-config', VociConfigController.upsert);
 
 router.get('/fornitori', FornitoreController.getBySocieta);
 router.post('/fornitori', FornitoreController.create);
