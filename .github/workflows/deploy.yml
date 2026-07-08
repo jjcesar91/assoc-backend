@@ -41,6 +41,7 @@ jobs:
             cd docker
 
             REBUILD_USERS=false
+            REBUILD_PAYMENTS=false
 
             # Ricreazione robusta al bug di docker-compose v1 "KeyError: 'ContainerConfig'":
             # si rimuovono i container prima di ricrearli, cosi' compose non tenta di
@@ -58,6 +59,7 @@ jobs:
               recreate
               docker-compose restart nginx || true
               REBUILD_USERS=true
+              REBUILD_PAYMENTS=true
             else
               # Mappa i path services/<nome>/... sul relativo servizio compose <nome>_ms
               SERVICES=$(echo "$CHANGED" | sed -n 's#^services/\([^/]*\)/.*#\1_ms#p' | sort -u)
@@ -70,6 +72,9 @@ jobs:
               if echo "$SERVICES" | grep -qw users_ms; then
                 REBUILD_USERS=true
               fi
+              if echo "$SERVICES" | grep -qw payments_ms; then
+                REBUILD_PAYMENTS=true
+              fi
             fi
 
             # Mostra i log delle migrazioni solo se users_ms e' stato ricostruito
@@ -77,6 +82,13 @@ jobs:
               echo "Waiting for users_ms to complete migrations..."
               sleep 20
               docker logs users_ms 2>&1 | grep -E "\[entrypoint\]|Migration" || true
+            fi
+
+            # Idem per payments_ms (baseline + sequelize-cli db:migrate all'avvio)
+            if [ "$REBUILD_PAYMENTS" = "true" ]; then
+              echo "Waiting for payments_ms to complete migrations..."
+              sleep 20
+              docker logs payments_ms 2>&1 | grep -E "\[entrypoint\]|\[baseline\]|migrat" || true
             fi
 
             echo "Deploy completed."

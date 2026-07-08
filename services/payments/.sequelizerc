@@ -1,0 +1,11 @@
+const path = require('path');
+
+// Le migration del servizio payments risiedono in migrations/000 (non nella
+// cartella di default migrations/). Qui indichiamo a sequelize-cli i percorsi
+// corretti così che `sequelize-cli db:migrate` le trovi.
+module.exports = {
+  config: path.resolve('config', 'config.js'),
+  'migrations-path': path.resolve('migrations', '000'),
+  'models-path': path.resolve('models'),
+  'seeders-path': path.resolve('seeders'),
+};
