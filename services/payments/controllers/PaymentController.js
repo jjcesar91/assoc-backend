@@ -306,9 +306,22 @@ exports.getNextNumero = async (req, res) => {
             societa_id, tipoEffettivo, annoStartStr, annoEndStr
         );
 
+        // Data dell'ultimo ordine dell'anno selezionato: usata dal frontend come
+        // limite inferiore selezionabile per la data documento. annoEndStr è
+        // esclusivo (inizio del periodo successivo).
+        const lastPayment = await Payment.findOne({
+            where: {
+                societa_id,
+                data_pagamento: { [Op.gte]: annoStartStr, [Op.lt]: annoEndStr },
+            },
+            order: [['data_pagamento', 'DESC']],
+            attributes: ['data_pagamento'],
+        });
+        const lastPaymentDate = lastPayment?.data_pagamento || null;
+
         const nextNumero = lastProgressivo + 1;
         const formatted = formatNumeroRicevuta(nextNumero, tipoEffettivo, dataInizio, annoStartStr);
-        res.json({ nextNumero, formatted, lastPaymentDate: null });
+        res.json({ nextNumero, formatted, lastPaymentDate });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Failed to get next numero' });
