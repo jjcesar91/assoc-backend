@@ -145,6 +145,12 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.TEXT,
       allowNull: true
     },
+    // CC alla mail anagrafica della società quando l'invio è AUTOMATICO
+    com_proforma_cc: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false
+    },
     com_pagamento_stato: {
       type: DataTypes.STRING(20),
       allowNull: false,
@@ -157,6 +163,12 @@ module.exports = (sequelize, DataTypes) => {
     com_pagamento_testo: {
       type: DataTypes.TEXT,
       allowNull: true
+    },
+    // CC alla mail anagrafica della società quando l'invio è AUTOMATICO
+    com_pagamento_cc: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false
     }
   }, {
     sequelize,

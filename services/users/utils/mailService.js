@@ -110,10 +110,11 @@ function buildSmtpSnapshot(societa) {
  * @param {string} options.subject - Email subject
  * @param {string} options.html - HTML body
  * @param {Object|null} options.societa - Societa instance (for custom SMTP lookup)
+ * @param {string|Array<string>} [options.cc] - Indirizzo/i in copia conoscenza (CC)
  * @param {Array<{filename: string, content: string, encoding?: string, contentType?: string}>} [options.attachments] - Allegati (es. ricevuta PDF in base64)
  * @returns {{ fromEmail: string, fromName: string, smtpParams: Object }}
  */
-async function sendEmail({ to, subject, html, societa, attachments }) {
+async function sendEmail({ to, subject, html, societa, cc, attachments }) {
     const transporter = buildTransporter(societa);
     const from = buildFromAddress(societa);
     const replyTo = buildReplyTo(societa);
@@ -128,6 +129,10 @@ async function sendEmail({ to, subject, html, societa, attachments }) {
 
     if (replyTo) {
         mailOptions.replyTo = replyTo;
+    }
+
+    if (cc && (Array.isArray(cc) ? cc.length > 0 : true)) {
+        mailOptions.cc = cc;
     }
 
     if (Array.isArray(attachments) && attachments.length > 0) {

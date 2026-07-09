@@ -64,7 +64,7 @@ class SocioController {
     async createComunicazione(req, res) {
         try {
             const socio_id = req.params.id;
-            const { tipo, oggetto, testo, allegati } = req.body;
+            const { tipo, oggetto, testo, allegati, ccSocieta } = req.body;
 
             // Basic validation
             if (!socio_id || !tipo || !testo) {
@@ -100,12 +100,19 @@ class SocioController {
                     return res.status(400).json({ error: 'Il socio non ha un indirizzo email registrato' });
                 }
 
+                // CC alla mail anagrafica della società, se richiesto e disponibile.
+                let cc;
+                if (ccSocieta && socio.societa?.email) {
+                    cc = socio.societa.email;
+                }
+
                 try {
                     const result = await sendEmail({
                         to: destinatarioEmail,
                         subject: oggetto,
                         html: testo,
                         societa: socio.societa || null,
+                        cc,
                         attachments: Array.isArray(allegati) ? allegati : undefined
                     });
                     isInviato = true;
