@@ -52,14 +52,22 @@ function buildTransporter(societa) {
 }
 
 /**
+ * Nome mittente da mostrare: sempre la denominazione della società (se
+ * disponibile), con fallback all'alias_email e infine al default.
+ * @param {Object|null} societa
+ */
+function resolveFromName(societa) {
+    return (societa && (societa.denominazione || societa.alias_email)) || DEFAULT_SMTP.fromName;
+}
+
+/**
  * Returns the "from" address to use.
  * FROM è sempre noreply@webassociazioni.it.
- * L'alias_email della società viene usato come display name se disponibile.
+ * Il display name è la denominazione della società.
  * @param {Object|null} societa
  */
 function buildFromAddress(societa) {
-    const fromName = (societa && societa.alias_email) || DEFAULT_SMTP.fromName;
-    return `"${fromName}" <${DEFAULT_SMTP.fromEmail}>`;
+    return `"${resolveFromName(societa)}" <${DEFAULT_SMTP.fromEmail}>`;
 }
 
 /**
@@ -110,11 +118,11 @@ function buildSmtpSnapshot(societa) {
  * @param {string} options.subject - Email subject
  * @param {string} options.html - HTML body
  * @param {Object|null} options.societa - Societa instance (for custom SMTP lookup)
- * @param {string|Array<string>} [options.cc] - Indirizzo/i in copia conoscenza (CC)
+ * @param {string|Array<string>} [options.bcc] - Indirizzo/i in copia conoscenza nascosta (CCn)
  * @param {Array<{filename: string, content: string, encoding?: string, contentType?: string}>} [options.attachments] - Allegati (es. ricevuta PDF in base64)
  * @returns {{ fromEmail: string, fromName: string, smtpParams: Object }}
  */
-async function sendEmail({ to, subject, html, societa, cc, attachments }) {
+async function sendEmail({ to, subject, html, societa, bcc, attachments }) {
     const transporter = buildTransporter(societa);
     const from = buildFromAddress(societa);
     const replyTo = buildReplyTo(societa);
@@ -131,8 +139,8 @@ async function sendEmail({ to, subject, html, societa, cc, attachments }) {
         mailOptions.replyTo = replyTo;
     }
 
-    if (cc && (Array.isArray(cc) ? cc.length > 0 : true)) {
-        mailOptions.cc = cc;
+    if (bcc && (Array.isArray(bcc) ? bcc.length > 0 : true)) {
+        mailOptions.bcc = bcc;
     }
 
     if (Array.isArray(attachments) && attachments.length > 0) {
@@ -146,7 +154,7 @@ async function sendEmail({ to, subject, html, societa, cc, attachments }) {
 
     await transporter.sendMail(mailOptions);
 
-    const fromName = (societa && societa.alias_email) || DEFAULT_SMTP.fromName;
+    const fromName = resolveFromName(societa);
 
     return { fromEmail: DEFAULT_SMTP.fromEmail, fromName, smtpParams };
 }

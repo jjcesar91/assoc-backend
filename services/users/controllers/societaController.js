@@ -180,8 +180,8 @@ class SocietaController {
                 quota_tesseramento_unico,  // Impostazione quota+tesseramento unico
                 tipo_associazione,  // ASD o APS
                 // Comunicazioni ordini
-                com_proforma_stato, com_proforma_oggetto, com_proforma_testo, com_proforma_cc,
-                com_pagamento_stato, com_pagamento_oggetto, com_pagamento_testo, com_pagamento_cc
+                com_proforma_stato, com_proforma_oggetto, com_proforma_testo, com_proforma_ccn,
+                com_pagamento_stato, com_pagamento_oggetto, com_pagamento_testo, com_pagamento_ccn
             } = req.body;
 
             await societa.update({
@@ -193,8 +193,8 @@ class SocietaController {
                 quota_tesseramento_unico,  // Impostazione quota+tesseramento unico
                 tipo_associazione,  // ASD o APS
                 // Comunicazioni ordini
-                com_proforma_stato, com_proforma_oggetto, com_proforma_testo, com_proforma_cc,
-                com_pagamento_stato, com_pagamento_oggetto, com_pagamento_testo, com_pagamento_cc
+                com_proforma_stato, com_proforma_oggetto, com_proforma_testo, com_proforma_ccn,
+                com_pagamento_stato, com_pagamento_oggetto, com_pagamento_testo, com_pagamento_ccn
             }, { transaction });
 
             if (affiliazioni && Array.isArray(affiliazioni)) {

@@ -64,7 +64,7 @@ class SocioController {
     async createComunicazione(req, res) {
         try {
             const socio_id = req.params.id;
-            const { tipo, oggetto, testo, allegati, ccSocieta } = req.body;
+            const { tipo, oggetto, testo, allegati, ccnSocieta } = req.body;
 
             // Basic validation
             if (!socio_id || !tipo || !testo) {
@@ -100,10 +100,11 @@ class SocioController {
                     return res.status(400).json({ error: 'Il socio non ha un indirizzo email registrato' });
                 }
 
-                // CC alla mail anagrafica della società, se richiesto e disponibile.
-                let cc;
-                if (ccSocieta && socio.societa?.email) {
-                    cc = socio.societa.email;
+                // CCn (copia conoscenza nascosta) alla mail anagrafica della
+                // società, se richiesto e disponibile.
+                let bcc;
+                if (ccnSocieta && socio.societa?.email) {
+                    bcc = socio.societa.email;
                 }
 
                 try {
@@ -112,7 +113,7 @@ class SocioController {
                         subject: oggetto,
                         html: testo,
                         societa: socio.societa || null,
-                        cc,
+                        bcc,
                         attachments: Array.isArray(allegati) ? allegati : undefined
                     });
                     isInviato = true;

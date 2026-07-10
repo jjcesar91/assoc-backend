@@ -145,8 +145,8 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.TEXT,
       allowNull: true
     },
-    // CC alla mail anagrafica della società quando l'invio è AUTOMATICO
-    com_proforma_cc: {
+    // CCn (copia conoscenza nascosta) alla mail anagrafica della società quando l'invio è AUTOMATICO
+    com_proforma_ccn: {
       type: DataTypes.BOOLEAN,
       allowNull: false,
       defaultValue: false
@@ -164,8 +164,8 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.TEXT,
       allowNull: true
     },
-    // CC alla mail anagrafica della società quando l'invio è AUTOMATICO
-    com_pagamento_cc: {
+    // CCn (copia conoscenza nascosta) alla mail anagrafica della società quando l'invio è AUTOMATICO
+    com_pagamento_ccn: {
       type: DataTypes.BOOLEAN,
       allowNull: false,
       defaultValue: false
