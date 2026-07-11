@@ -240,7 +240,9 @@ exports.internalAdminEmails = async (req, res) => {
             where: {
                 attivo: true,
                 [Op.or]: [
-                    { role: 'admin', societaId: parsedSocietaId },
+                    // Gli admin ricevono le notifiche solo se non hanno disattivato le comunicazioni
+                    // ([Op.ne]: false include anche i record legacy con valore NULL)
+                    { role: 'admin', societaId: parsedSocietaId, riceve_comunicazioni: { [Op.ne]: false } },
                     { role: 'superuser' },
                 ],
             },
@@ -363,6 +365,24 @@ exports.adminToggleAttivo = async (req, res) => {
         const user = await User.findByPk(req.params.id);
         if (!user) return res.sendStatus(404);
         user.attivo = !user.attivo;
+        await user.save();
+        const { password: _, ...safe } = user.toJSON();
+        res.json(safe);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// Attiva/disattiva la ricezione delle comunicazioni email per un admin
+exports.adminToggleComunicazioni = async (req, res) => {
+    try {
+        const user = await User.findByPk(req.params.id);
+        if (!user) return res.sendStatus(404);
+        if (user.role !== 'admin') {
+            return res.status(400).json({ error: 'Configurabile solo per utenti Amministratore' });
+        }
+        // I record legacy possono avere NULL: trattato come "attivo" (true)
+        user.riceve_comunicazioni = user.riceve_comunicazioni === false ? true : false;
         await user.save();
         const { password: _, ...safe } = user.toJSON();
         res.json(safe);

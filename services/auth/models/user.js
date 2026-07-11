@@ -53,6 +53,10 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.BOOLEAN,
       defaultValue: true
     },
+    riceve_comunicazioni: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: true   // se false, l'admin non riceve le notifiche email (es. caricamento ricevuta)
+    },
     features: {
       type: DataTypes.JSON,
       allowNull: true,
