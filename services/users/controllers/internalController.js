@@ -22,10 +22,13 @@ function esc(s) {
 
 // Recupera gli indirizzi email degli amministratori della società + i superuser
 // dal servizio auth (chiamata interna protetta da secret).
-async function fetchAdminEmails(societaId) {
+// `tipo` (opzionale) è la chiave del tipo di notifica: gli admin che l'hanno
+// disattivata nelle preferenze vengono esclusi dai destinatari.
+async function fetchAdminEmails(societaId, tipo) {
     const authUrl = process.env.AUTH_SERVICE_URL || 'http://auth_ms:3000';
     const secret = process.env.INTERNAL_API_SECRET || 'internal_secret_change_me';
-    const res = await fetch(`${authUrl}/api/internal/admin-emails?societaId=${encodeURIComponent(societaId)}`, {
+    const tipoQs = tipo ? `&tipo=${encodeURIComponent(tipo)}` : '';
+    const res = await fetch(`${authUrl}/api/internal/admin-emails?societaId=${encodeURIComponent(societaId)}${tipoQs}`, {
         headers: { 'x-internal-secret': secret },
     });
     if (!res.ok) {
@@ -72,7 +75,7 @@ const InternalController = {
 
             let recipients = [];
             try {
-                const admins = await fetchAdminEmails(societa_id);
+                const admins = await fetchAdminEmails(societa_id, 'ricevuta_caricata');
                 recipients = admins.map(a => a.email).filter(Boolean);
             } catch (e) {
                 console.error('Errore recupero destinatari admin/superuser:', e.message);

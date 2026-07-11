@@ -53,9 +53,12 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.BOOLEAN,
       defaultValue: true
     },
-    riceve_comunicazioni: {
-      type: DataTypes.BOOLEAN,
-      defaultValue: true   // se false, l'admin non riceve le notifiche email (es. caricamento ricevuta)
+    comunicazioni_preferenze: {
+      type: DataTypes.JSON,
+      allowNull: true,
+      // null = tutte le notifiche abilitate. Altrimenti mappa { chiave_notifica: boolean };
+      // una chiave assente è considerata abilitata (true). Es: { nuovo_ordine: false }
+      defaultValue: null
     },
     features: {
       type: DataTypes.JSON,

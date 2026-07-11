@@ -25,7 +25,8 @@ router.get('/admin/users', authenticateToken, requireAdmin, authController.admin
 router.post('/admin/users', authenticateToken, requireAdmin, authController.adminCreateUser);
 router.put('/admin/users/:id', authenticateToken, requireAdmin, authController.adminUpdateUser);
 router.patch('/admin/users/:id/toggle-attivo', authenticateToken, requireAdmin, authController.adminToggleAttivo);
-router.patch('/admin/users/:id/toggle-comunicazioni', authenticateToken, requireAdmin, authController.adminToggleComunicazioni);
+router.get('/admin/users/:id/comunicazioni', authenticateToken, requireAdmin, authController.adminGetComunicazioni);
+router.put('/admin/users/:id/comunicazioni', authenticateToken, requireAdmin, authController.adminSetComunicazioni);
 router.delete('/admin/users/:id', authenticateToken, requireAdmin, authController.adminDeleteUser);
 router.post('/admin/users/:id/impersonate', authenticateToken, requireAdmin, authController.adminImpersonate);
 router.get('/admin/users/:id/features', authenticateToken, requireAdmin, authController.adminGetUserFeatures);

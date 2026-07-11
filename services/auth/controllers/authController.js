@@ -226,11 +226,13 @@ exports.updatePassword = async (req, res) => {
 };
 
 // ── Interno: email destinatari notifiche (admin società + superuser) ─────────
-// GET /api/internal/admin-emails?societaId=X  (protetto da secret interno)
+// GET /api/internal/admin-emails?societaId=X&tipo=<chiave>  (protetto da secret interno)
+// Il parametro `tipo` (opzionale) è la chiave del tipo di notifica: gli admin che
+// hanno disattivato quel tipo nelle preferenze vengono esclusi. I superuser ricevono sempre.
 exports.internalAdminEmails = async (req, res) => {
     try {
         const { Op } = require('sequelize');
-        const { societaId } = req.query;
+        const { societaId, tipo } = req.query;
         if (!societaId) {
             return res.status(400).json({ error: 'societaId è obbligatorio' });
         }
@@ -240,16 +242,24 @@ exports.internalAdminEmails = async (req, res) => {
             where: {
                 attivo: true,
                 [Op.or]: [
-                    // Gli admin ricevono le notifiche solo se non hanno disattivato le comunicazioni
-                    // ([Op.ne]: false include anche i record legacy con valore NULL)
-                    { role: 'admin', societaId: parsedSocietaId, riceve_comunicazioni: { [Op.ne]: false } },
+                    { role: 'admin', societaId: parsedSocietaId },
                     { role: 'superuser' },
                 ],
             },
-            attributes: ['email', 'nome', 'cognome', 'role'],
+            attributes: ['email', 'nome', 'cognome', 'role', 'comunicazioni_preferenze'],
             order: [['id', 'ASC']],
         });
-        res.json(users);
+
+        // Filtra gli admin che hanno disattivato questo tipo di notifica.
+        // Preferenze null/chiave assente ⇒ abilitato. I superuser ricevono sempre.
+        const filtered = users.filter(u => {
+            if (u.role === 'superuser') return true;
+            if (!tipo) return true;
+            const prefs = u.comunicazioni_preferenze;
+            return !prefs || prefs[tipo] !== false;
+        });
+
+        res.json(filtered.map(({ email, nome, cognome, role }) => ({ email, nome, cognome, role })));
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -373,19 +383,31 @@ exports.adminToggleAttivo = async (req, res) => {
     }
 };
 
-// Attiva/disattiva la ricezione delle comunicazioni email per un admin
-exports.adminToggleComunicazioni = async (req, res) => {
+// Preferenze di comunicazione (per tipo di notifica) di un admin
+exports.adminGetComunicazioni = async (req, res) => {
+    try {
+        const user = await User.findByPk(req.params.id, { attributes: ['id', 'email', 'role', 'comunicazioni_preferenze'] });
+        if (!user) return res.sendStatus(404);
+        res.json({ comunicazioni: user.comunicazioni_preferenze });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+exports.adminSetComunicazioni = async (req, res) => {
     try {
         const user = await User.findByPk(req.params.id);
         if (!user) return res.sendStatus(404);
         if (user.role !== 'admin') {
             return res.status(400).json({ error: 'Configurabile solo per utenti Amministratore' });
         }
-        // I record legacy possono avere NULL: trattato come "attivo" (true)
-        user.riceve_comunicazioni = user.riceve_comunicazioni === false ? true : false;
+        // comunicazioni: null (tutte abilitate) oppure mappa { chiave_notifica: boolean }
+        const { comunicazioni } = req.body;
+        user.comunicazioni_preferenze = (comunicazioni && typeof comunicazioni === 'object' && !Array.isArray(comunicazioni))
+            ? comunicazioni
+            : null;
         await user.save();
-        const { password: _, ...safe } = user.toJSON();
-        res.json(safe);
+        res.json({ comunicazioni: user.comunicazioni_preferenze });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
