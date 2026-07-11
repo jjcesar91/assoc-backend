@@ -17,6 +17,7 @@ router.post('/login', authController.login);
 router.post('/refresh-token', authController.refreshToken);
 router.get('/me', authenticateToken, authController.me);
 router.put('/me', authenticateToken, authController.updateProfile);
+router.post('/switch-societa', authenticateToken, authController.switchSocieta);
 router.put('/password', authenticateToken, authController.updatePassword);
 
 // Admin – gestione utenti (solo role=admin)

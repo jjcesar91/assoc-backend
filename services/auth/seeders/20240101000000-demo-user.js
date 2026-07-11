@@ -13,7 +13,6 @@ module.exports = {
       const hashedPassword = await bcrypt.hash('password123', 10);
       
       return queryInterface.bulkInsert('Users', [{
-        username: 'demo',
         email: 'demo@example.com',
         password: hashedPassword,
         role: 'superuser',
@@ -27,11 +26,10 @@ module.exports = {
        console.log('Seeder: Updating existing Demo User to superuser and setting profile info...');
        // If user exists, we might want to update it to ensure it has the new fields
        return queryInterface.sequelize.query(
-        `UPDATE "Users" SET 
-          role = 'superuser', 
+        `UPDATE "Users" SET
+          role = 'superuser',
           "societaId" = NULL,
-          username = 'demo',
-          nome = 'DONATO', 
+          nome = 'DONATO',
           cognome = 'SALFI', 
           telefono = '336382041' 
         WHERE email = 'demo@example.com';`

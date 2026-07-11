@@ -15,15 +15,11 @@ module.exports = (sequelize, DataTypes) => {
   }
   
   User.init({
-    username: {
-      type: DataTypes.STRING,
-      allowNull: false,
-      unique: true
-    },
     email: {
       type: DataTypes.STRING,
       allowNull: false,
-      unique: true,
+      // Unicità composita (email, societaId): la stessa email può esistere in
+      // società diverse (stessa persona registrata per più società).
       validate: {
         isEmail: true
       }
@@ -75,6 +71,13 @@ module.exports = (sequelize, DataTypes) => {
   }, {
     sequelize,
     modelName: 'User',
+    indexes: [
+      {
+        unique: true,
+        fields: ['email', 'societaId'],
+        name: 'users_email_societa_unique'
+      }
+    ],
     hooks: {
       beforeCreate: async (user) => {
         if (user.password) {

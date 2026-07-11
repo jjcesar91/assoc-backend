@@ -15,10 +15,9 @@ module.exports = {
     if (users.length > 0) {
         // Update existing user
         return queryInterface.sequelize.query(
-          `UPDATE "Users" 
-           SET 
-             username = 'demo',
-             role = 'superuser', 
+          `UPDATE "Users"
+           SET
+             role = 'superuser',
              "societaId" = NULL,
              nome = 'DONATO', 
              cognome = 'SALFI', 
@@ -29,7 +28,6 @@ module.exports = {
     } else {
         // Create new user if not exists
         return queryInterface.bulkInsert('Users', [{
-            username: 'demo',
             email: 'demo@example.com',
             password: hashedPassword,
             role: 'superuser',

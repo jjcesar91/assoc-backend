@@ -1,9 +1,14 @@
+const { Op } = require('sequelize');
 const { Societa, SocietaAffiliazioni } = require('../models');
 
 const getUserScope = (req) => {
     const role = req.user?.role || 'user';
     const societaId = req.user?.societaId != null ? parseInt(req.user.societaId, 10) : null;
-    return { role, societaId };
+    // Elenco delle società consentite (utente multi-società: stessa email in più società).
+    const societaIds = Array.isArray(req.user?.societaIds)
+        ? req.user.societaIds.map((id) => parseInt(id, 10)).filter(Number.isInteger)
+        : [];
+    return { role, societaId, societaIds };
 };
 
 class SocietaController {
@@ -11,10 +16,17 @@ class SocietaController {
     // Get all Societa
     async getAllSocieta(req, res) {
         try {
-            const { role, societaId } = getUserScope(req);
-            const where = role === 'superuser'
-                ? undefined
-                : (Number.isInteger(societaId) ? { id: societaId } : { id: -1 });
+            const { role, societaId, societaIds } = getUserScope(req);
+            let where;
+            if (role === 'superuser') {
+                where = undefined;                                  // tutte
+            } else if (societaIds.length > 1) {
+                where = { id: { [Op.in]: societaIds } };            // multi-società: la tendina
+            } else if (Number.isInteger(societaId)) {
+                where = { id: societaId };
+            } else {
+                where = { id: -1 };
+            }
 
             const societa = await Societa.findAll({
                 where,
@@ -35,9 +47,11 @@ class SocietaController {
         try {
             const { id } = req.params;
             const requestedId = parseInt(id, 10);
-            const { role, societaId } = getUserScope(req);
+            const { role, societaId, societaIds } = getUserScope(req);
 
-            if (role !== 'superuser' && Number.isInteger(societaId) && requestedId !== societaId) {
+            // Consentito se è la società attiva oppure una delle società consentite (multi-società).
+            const allowed = requestedId === societaId || societaIds.includes(requestedId);
+            if (role !== 'superuser' && Number.isInteger(societaId) && !allowed) {
                 return res.status(403).json({ message: 'Forbidden' });
             }
 

@@ -30,6 +30,30 @@ async function start({ retries = 15, delayMs = 3000 } = {}) {
   for (let attempt = 1; attempt <= retries; attempt += 1) {
     try {
       await db.sequelize.authenticate();
+      // Rimuove i vecchi indici UNIQUE globali su email (Users_email_key, _key1…)
+      // lasciati da precedenti sync: l'unicità email ora è composita (email, societaId),
+      // così la stessa email può esistere in società diverse. Idempotente.
+      await db.sequelize.query(`
+        DO $$
+        DECLARE obj RECORD;
+        BEGIN
+          -- I vecchi vincoli globali su email sono UNIQUE constraint: vanno rilasciati
+          -- come constraint (questo elimina anche l'indice sottostante).
+          FOR obj IN
+            SELECT conname FROM pg_constraint
+            WHERE conrelid = '"Users"'::regclass AND conname ~ '^Users_email_key'
+          LOOP
+            EXECUTE format('ALTER TABLE "Users" DROP CONSTRAINT IF EXISTS %I', obj.conname);
+          END LOOP;
+          -- Eventuali indici residui (non legati a constraint).
+          FOR obj IN
+            SELECT indexname AS conname FROM pg_indexes
+            WHERE tablename = 'Users' AND indexname ~ '^Users_email_key'
+          LOOP
+            EXECUTE format('DROP INDEX IF EXISTS %I', obj.conname);
+          END LOOP;
+        END $$;
+      `);
       await db.sequelize.sync({ alter: true });
       console.log('Database connected and synced successfully.');
 

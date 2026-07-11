@@ -23,7 +23,6 @@ async function seedSuperuser() {
 
         console.log('Creazione superuser in corso...');
         const admin = await User.create({
-            username: 'admin',
             email: 'admin@admin.com',
             password: 'AdminPassword123!', // Assicurati che rispetti la tua policy (maiuscole, numeri, speciali)
             nome: 'Super',

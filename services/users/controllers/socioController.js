@@ -590,7 +590,7 @@ class SocioController {
             }
 
             const owner_label = req.user
-                ? (req.user.username || req.user.email || 'Operatore')
+                ? (req.user.email || 'Operatore')
                 : 'Operatore';
             const owner_id = req.user ? req.user.id : null;
 
@@ -623,7 +623,7 @@ class SocioController {
             }
 
             const owner_label = req.user
-                ? (req.user.username || req.user.email || 'Operatore')
+                ? (req.user.email || 'Operatore')
                 : 'Sistema';
             const owner_id = req.user ? req.user.id : null;
             const owner_tipo = req.user ? 'utente' : 'sistema';
