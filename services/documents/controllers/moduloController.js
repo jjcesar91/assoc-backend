@@ -21,7 +21,12 @@ module.exports = {
 
   async getAll(req, res) {
     try {
-      const modulis = await Modulo.findAll();
+      const { societa_id } = req.query;
+      const where = {};
+      if (societa_id) {
+        where.societa_id = societa_id;
+      }
+      const modulis = await Modulo.findAll({ where });
       return res.status(200).json(modulis);
     } catch (error) {
       return res.status(500).json({ error: error.message });
