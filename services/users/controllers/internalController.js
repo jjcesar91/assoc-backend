@@ -20,8 +20,9 @@ function esc(s) {
         .replace(/>/g, '&gt;');
 }
 
-// Recupera gli indirizzi email degli amministratori della società + i superuser
-// dal servizio auth (chiamata interna protetta da secret).
+// Recupera gli indirizzi email degli amministratori della società dal servizio
+// auth (chiamata interna protetta da secret). Solo gli admin della società
+// ricevono le notifiche (i superuser sono esclusi).
 // `tipo` (opzionale) è la chiave del tipo di notifica: gli admin che l'hanno
 // disattivata nelle preferenze vengono esclusi dai destinatari.
 async function fetchAdminEmails(societaId, tipo) {
@@ -78,14 +79,14 @@ const InternalController = {
                 const admins = await fetchAdminEmails(societa_id, 'ricevuta_caricata');
                 recipients = admins.map(a => a.email).filter(Boolean);
             } catch (e) {
-                console.error('Errore recupero destinatari admin/superuser:', e.message);
+                console.error('Errore recupero destinatari admin:', e.message);
                 return res.status(502).json({ error: 'Impossibile recuperare i destinatari' });
             }
 
             // Deduplica
             recipients = [...new Set(recipients)];
             if (recipients.length === 0) {
-                console.warn(`Nessun destinatario admin/superuser per società ${societa_id}`);
+                console.warn(`Nessun destinatario admin per società ${societa_id}`);
                 return res.status(200).json({ sent: 0, warning: 'Nessun destinatario' });
             }
 

@@ -225,13 +225,13 @@ exports.updatePassword = async (req, res) => {
     }
 };
 
-// ── Interno: email destinatari notifiche (admin società + superuser) ─────────
+// ── Interno: email destinatari notifiche (solo admin della società) ──────────
 // GET /api/internal/admin-emails?societaId=X&tipo=<chiave>  (protetto da secret interno)
+// Riceve le notifiche SOLO l'admin della società indicata (i superuser sono esclusi).
 // Il parametro `tipo` (opzionale) è la chiave del tipo di notifica: gli admin che
-// hanno disattivato quel tipo nelle preferenze vengono esclusi. I superuser ricevono sempre.
+// hanno disattivato quel tipo nelle preferenze vengono esclusi.
 exports.internalAdminEmails = async (req, res) => {
     try {
-        const { Op } = require('sequelize');
         const { societaId, tipo } = req.query;
         if (!societaId) {
             return res.status(400).json({ error: 'societaId è obbligatorio' });
@@ -241,19 +241,16 @@ exports.internalAdminEmails = async (req, res) => {
         const users = await User.findAll({
             where: {
                 attivo: true,
-                [Op.or]: [
-                    { role: 'admin', societaId: parsedSocietaId },
-                    { role: 'superuser' },
-                ],
+                role: 'admin',
+                societaId: parsedSocietaId,
             },
             attributes: ['email', 'nome', 'cognome', 'role', 'comunicazioni_preferenze'],
             order: [['id', 'ASC']],
         });
 
-        // Filtra gli admin che hanno disattivato questo tipo di notifica.
-        // Preferenze null/chiave assente ⇒ abilitato. I superuser ricevono sempre.
+        // Escludi gli admin che hanno disattivato questo tipo di notifica.
+        // Preferenze null/chiave assente ⇒ abilitato.
         const filtered = users.filter(u => {
-            if (u.role === 'superuser') return true;
             if (!tipo) return true;
             const prefs = u.comunicazioni_preferenze;
             return !prefs || prefs[tipo] !== false;
