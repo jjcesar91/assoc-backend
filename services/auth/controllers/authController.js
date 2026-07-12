@@ -1,6 +1,6 @@
 const { User } = require('../models');
 const jwt = require('jsonwebtoken');
-const { ValidationError } = require('sequelize');
+const { ValidationError, Op } = require('sequelize');
 
 const {
     MIN_PASSWORD_LENGTH,
@@ -20,15 +20,28 @@ const formatErrorMessage = (error) => {
     return error.message || 'Errore interno';
 };
 
+// Un account con role 'socio' vive nel frontend Area Soci; ogni altro ruolo
+// (user/admin/staff/superuser) vive nel gestionale. La stessa email può esistere
+// in entrambi i mondi: la tendina "cambia società" deve restare confinata al
+// mondo della sessione corrente.
+const isSocioRole = (role) => role === 'socio';
+
 // Elenco delle società per cui una data email è registrata (una riga User per società).
 // Serve a popolare la tendina "cambia società" come per il superuser.
-const getSocietaIdsForEmail = async (email) => {
+// `isSocio`:
+//   - true  → solo le righe con role 'socio' (tendina Area Soci)
+//   - false → solo le righe gestionali (role !== 'socio')
+//   - null  → tutte (retrocompatibilità)
+const getSocietaIdsForEmail = async (email, isSocio = null) => {
     if (!email) return [];
     const rows = await User.findAll({
         where: { email },
-        attributes: ['societaId'],
+        attributes: ['societaId', 'role'],
     });
-    return [...new Set(rows.map(r => r.societaId).filter(id => id != null))];
+    const filtered = isSocio === null
+        ? rows
+        : rows.filter(r => isSocioRole(r.role) === isSocio);
+    return [...new Set(filtered.map(r => r.societaId).filter(id => id != null))];
 };
 
 const generateTokens = (user, societaIds = null) => {
@@ -69,7 +82,10 @@ exports.register = async (req, res) => {
 
 exports.login = async (req, res) => {
     try {
-        const { email, password } = req.body;
+        // `accessType`: 'socio' | 'gestionale' | undefined. Serve solo quando la
+        // stessa email+password apre sia il gestionale sia l'Area Soci: in quel
+        // caso il client deve scegliere in quale mondo entrare.
+        const { email, password, accessType } = req.body;
         console.log(`Login attempt for: ${email}`);
 
         // La stessa email può esistere in più società (stessa persona): recuperiamo
@@ -93,10 +109,25 @@ exports.login = async (req, res) => {
             return res.status(401).json({ error: 'Invalid password' }); // DEV: specific message
         }
 
-        // Società consentite = quelle delle righe che hanno validato la password.
-        const societaIds = [...new Set(matched.map(u => u.societaId).filter(id => id != null))];
+        // Separiamo i due mondi: Area Soci (role 'socio') e gestionale (altri ruoli).
+        const socioRows = matched.filter(u => isSocioRole(u.role));
+        const gestRows = matched.filter(u => !isSocioRole(u.role));
+
+        // Se l'email apre entrambi i mondi e il client non ha ancora scelto,
+        // restituiamo la richiesta di scelta (nessun token emesso).
+        if (socioRows.length && gestRows.length && accessType !== 'socio' && accessType !== 'gestionale') {
+            return res.json({ requiresRoleChoice: true });
+        }
+
+        let group;
+        if (accessType === 'socio' && socioRows.length) group = socioRows;
+        else if (accessType === 'gestionale' && gestRows.length) group = gestRows;
+        else group = socioRows.length && !gestRows.length ? socioRows : (gestRows.length ? gestRows : matched);
+
+        // Società consentite = quelle delle righe del mondo scelto.
+        const societaIds = [...new Set(group.map(u => u.societaId).filter(id => id != null))];
         // Società attiva di default: la prima riga con società (altrimenti la prima match).
-        const active = matched.find(u => u.societaId != null) || matched[0];
+        const active = group.find(u => u.societaId != null) || group[0];
 
         const tokens = generateTokens(active, societaIds);
         res.json({
@@ -119,7 +150,7 @@ exports.refreshToken = async (req, res) => {
         const user = await User.findByPk(decoded.id);
         if (!user) return res.sendStatus(403);
 
-        const societaIds = await getSocietaIdsForEmail(user.email);
+        const societaIds = await getSocietaIdsForEmail(user.email, isSocioRole(user.role));
         const tokens = generateTokens(user, societaIds.length ? societaIds : null);
         res.json(tokens);
     });
@@ -131,8 +162,9 @@ exports.me = async (req, res) => {
             attributes: { exclude: ['password'] }
         });
         if (!user) return res.sendStatus(404);
-        // Espone l'elenco delle società consentite (per la tendina di cambio società).
-        const societaIds = await getSocietaIdsForEmail(user.email);
+        // Espone l'elenco delle società consentite (per la tendina di cambio società),
+        // confinato al mondo della sessione corrente (Area Soci vs gestionale).
+        const societaIds = await getSocietaIdsForEmail(user.email, isSocioRole(user.role));
         res.json({ ...user.toJSON(), societaIds });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -147,12 +179,18 @@ exports.switchSocieta = async (req, res) => {
         if (!Number.isInteger(targetSocietaId)) {
             return res.status(400).json({ error: 'societaId non valido' });
         }
-        const societaIds = await getSocietaIdsForEmail(req.user.email);
+        // Restiamo nello stesso mondo (Area Soci vs gestionale) della sessione corrente.
+        const isSocio = isSocioRole(req.user.role);
+        const societaIds = await getSocietaIdsForEmail(req.user.email, isSocio);
         if (!societaIds.includes(targetSocietaId)) {
             return res.status(403).json({ error: 'Società non consentita per questo utente' });
         }
         const target = await User.findOne({
-            where: { email: req.user.email, societaId: targetSocietaId },
+            where: {
+                email: req.user.email,
+                societaId: targetSocietaId,
+                role: isSocio ? 'socio' : { [Op.ne]: 'socio' },
+            },
         });
         if (!target) return res.status(404).json({ error: 'Utente non trovato per la società scelta' });
 
@@ -494,68 +532,145 @@ function generateRandomPassword() {
     return `${base}${pick().slice(0, MIN_PASSWORD_LENGTH - base.length)}`;
 }
 
+// Stato condiviso dell'accesso frontend per una email.
+// L'accesso Area Soci è legato alla MAIL, non al singolo socio: se esiste almeno
+// una riga User role='socio' con quella email, l'accesso è considerato attivo per
+// tutti i soci (di qualunque società) che condividono la mail.
+// GET /api/socio-access/status?email=X
+exports.getSocioAccessStatus = async (req, res) => {
+    try {
+        const email = req.query.email;
+        if (!email) return res.status(400).json({ error: 'email è obbligatoria' });
+
+        const rows = await User.findAll({ where: { email, role: 'socio' } });
+        res.json({
+            enabled: rows.length > 0,
+            entries: rows.map(u => ({ user_id: u.id, societaId: u.societaId, socio_ref_id: u.socio_ref_id })),
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// Abilita l'accesso frontend per una mail su tutte le società indicate.
+// Body:
+//   email        (obbligatoria)
+//   targets      [{ socio_ref_id, societaId, nome, cognome }]  — un socio per società
+//   sharedPassword?  password in chiaro condivisa (se l'accesso esiste già altrove)
+//   socio_ref_id / societaId / nome / cognome  — forma legacy a socio singolo
+// Tutte le righe User create/aggiornate condividono la STESSA password, così il
+// login aggrega le società in un'unica sessione con tendina di cambio società.
 exports.createSocioAccess = async (req, res) => {
     try {
-        const { socio_ref_id, email, nome, cognome, societaId } = req.body;
-        if (!socio_ref_id || !email) {
-            return res.status(400).json({ error: 'socio_ref_id ed email sono obbligatori' });
+        const { email, sharedPassword } = req.body;
+        let targets = Array.isArray(req.body.targets) ? req.body.targets : null;
+        if (!targets) {
+            // Forma legacy a socio singolo
+            const { socio_ref_id, societaId, nome, cognome } = req.body;
+            targets = socio_ref_id ? [{ socio_ref_id, societaId, nome, cognome }] : [];
+        }
+        targets = targets.filter(t => t && t.socio_ref_id);
+
+        if (!email || !targets.length) {
+            return res.status(400).json({ error: 'email e almeno un socio sono obbligatori' });
         }
 
-        // Se esiste già un utente per questo socio, restituisci i dati esistenti
-        const existing = await User.findOne({ where: { socio_ref_id } });
-        if (existing) {
-            return res.status(200).json({
-                user_id: existing.id,
-                email: existing.email,
-                password_plain: null,
-                already_existed: true,
+        // Righe socio già esistenti per questa mail → account condiviso già attivo.
+        const existingSocioUsers = await User.findAll({ where: { email, role: 'socio' } });
+
+        // Determina la password condivisa da usare per le nuove righe:
+        //  1) sharedPassword esplicita dal client (chiaro noto)
+        //  2) altrimenti riusa l'hash di una riga socio esistente
+        //  3) altrimenti genera una nuova password
+        let plainForNew = null;   // chiaro da restituire/salvare (null se sconosciuto)
+        let hashToReuse = null;
+        if (sharedPassword) {
+            plainForNew = sharedPassword;
+        } else if (existingSocioUsers.length) {
+            hashToReuse = existingSocioUsers[0].password; // già hashata
+        } else {
+            plainForNew = generateRandomPassword();
+        }
+
+        const entries = [];
+        for (const t of targets) {
+            const tSocietaId = t.societaId != null ? parseInt(t.societaId, 10) : null;
+            const tRefId = parseInt(t.socio_ref_id, 10);
+
+            // Vincolo unico (email, societaId): al più una riga per società.
+            const existing = await User.findOne({ where: { email, societaId: tSocietaId } });
+            if (existing) {
+                if (!isSocioRole(existing.role)) {
+                    // Utente gestionale con la stessa mail in questa società: non lo
+                    // tocchiamo (la scelta gestionale/socio avviene al login). Segnaliamo.
+                    entries.push({ socio_ref_id: tRefId, societaId: tSocietaId, user_id: existing.id, skipped: true });
+                    continue;
+                }
+                if (existing.socio_ref_id !== tRefId) {
+                    existing.socio_ref_id = tRefId;
+                    await existing.save();
+                }
+                entries.push({ socio_ref_id: tRefId, societaId: tSocietaId, user_id: existing.id, already_existed: true });
+                continue;
+            }
+
+            // Nuova riga socio. Se riusiamo un hash, creiamo con una password valida
+            // temporanea e poi sovrascriviamo la colonna con l'hash condiviso.
+            const created = await User.create({
+                email,
+                password: plainForNew || generateRandomPassword(),
+                nome: t.nome || '',
+                cognome: t.cognome || '',
+                role: 'socio',
+                attivo: true,
+                socio_ref_id: tRefId,
+                societaId: tSocietaId,
             });
+            if (hashToReuse) {
+                // Update statico → nessun hook di hashing: scrive l'hash così com'è.
+                await User.update({ password: hashToReuse }, { where: { id: created.id }, hooks: false });
+            }
+            entries.push({ socio_ref_id: tRefId, societaId: tSocietaId, user_id: created.id });
         }
 
-        const plainPassword = generateRandomPassword();
-
-        const user = await User.create({
-            email,
-            password: plainPassword,
-            nome: nome || '',
-            cognome: cognome || '',
-            role: 'socio',
-            attivo: true,
-            socio_ref_id,
-            societaId: societaId ? parseInt(societaId, 10) : null,
-        });
-
-        res.status(201).json({
-            user_id: user.id,
-            email: user.email,
-            password_plain: plainPassword,
+        res.status(existingSocioUsers.length ? 200 : 201).json({
+            password_plain: plainForNew, // null se hash riusato senza chiaro noto
+            already_existed: existingSocioUsers.length > 0,
+            entries,
         });
     } catch (error) {
         res.status(400).json({ error: formatErrorMessage(error) });
     }
 };
 
+// Revoca l'accesso frontend per l'intera mail (tutte le società).
+// Il socio_ref_id in path serve solo a risalire alla mail.
 exports.deleteSocioAccess = async (req, res) => {
     try {
         const socio_ref_id = parseInt(req.params.socio_ref_id, 10);
-        const user = await User.findOne({ where: { socio_ref_id } });
+        const user = await User.findOne({ where: { socio_ref_id, role: 'socio' } });
         if (!user) return res.status(404).json({ error: 'Nessun accesso trovato per questo socio' });
-        await user.destroy();
-        res.json({ message: 'Accesso frontend rimosso' });
+
+        const destroyed = await User.destroy({ where: { email: user.email, role: 'socio' } });
+        res.json({ message: 'Accesso frontend rimosso', removed: destroyed });
     } catch (error) {
         res.status(400).json({ error: formatErrorMessage(error) });
     }
 };
 
+// Rigenera la password condivisa: viene applicata a TUTTE le righe socio della mail.
 exports.resetSocioPassword = async (req, res) => {
     try {
         const socio_ref_id = parseInt(req.params.socio_ref_id, 10);
-        const user = await User.findOne({ where: { socio_ref_id } });
+        const user = await User.findOne({ where: { socio_ref_id, role: 'socio' } });
         if (!user) return res.status(404).json({ error: 'Nessun accesso trovato per questo socio' });
 
         const plainPassword = generateRandomPassword();
-        user.password = plainPassword;
-        await user.save();
+        const rows = await User.findAll({ where: { email: user.email, role: 'socio' } });
+        for (const row of rows) {
+            row.password = plainPassword; // hashata dall'hook beforeUpdate
+            await row.save();
+        }
 
         res.json({ password_plain: plainPassword });
     } catch (error) {

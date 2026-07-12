@@ -33,6 +33,7 @@ router.get('/admin/users/:id/features', authenticateToken, requireAdmin, authCon
 router.put('/admin/users/:id/features', authenticateToken, requireAdmin, authController.adminSetUserFeatures);
 
 // Accesso frontend soci (solo admin)
+router.get('/socio-access/status', authenticateToken, requireAdmin, authController.getSocioAccessStatus);
 router.post('/socio-access', authenticateToken, requireAdmin, authController.createSocioAccess);
 router.delete('/socio-access/:socio_ref_id', authenticateToken, requireAdmin, authController.deleteSocioAccess);
 router.post('/socio-access/:socio_ref_id/reset-password', authenticateToken, requireAdmin, authController.resetSocioPassword);

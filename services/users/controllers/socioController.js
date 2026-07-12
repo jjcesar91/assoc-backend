@@ -229,6 +229,11 @@ class SocioController {
             if (req.query.societa_id) {
                 whereClause.societa_id = req.query.societa_id;
             }
+            // Filtro per email: usato dal flusso "accesso frontend" per trovare tutti
+            // i soci (di società diverse) che condividono la stessa mail.
+            if (req.query.email) {
+                whereClause.email = req.query.email;
+            }
 
             const soci = await Socio.findAll({
                 where: whereClause,
