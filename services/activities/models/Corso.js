@@ -9,6 +9,7 @@ module.exports = (sequelize, DataTypes) => {
       Corso.belongsTo(models.Area, { foreignKey: 'areaId', as: 'area' });
       Corso.belongsTo(models.Staff, { foreignKey: 'staffId', as: 'staff' });
       Corso.hasMany(models.CorsoIscrizione, { foreignKey: 'corsoId', as: 'iscrizioni' });
+      Corso.hasMany(models.CorsoOrario, { foreignKey: 'corsoId', as: 'orari', onDelete: 'CASCADE' });
     }
   }
   Corso.init({
@@ -32,6 +33,9 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.INTEGER,
       allowNull: true
     },
+    // Gli orari del corso vivono in CorsoOrari (uno o più giorni/orari).
+    // I campi giorno/oraInizio/durataMinuti qui sotto sono mantenuti come mirror
+    // del PRIMO orario, per retrocompatibilità con i consumer che leggono il corso "piatto".
     // 0 = LUN, 1 = MAR, 2 = MER, 3 = GIO, 4 = VEN, 5 = SAB, 6 = DOM
     giorno: {
       type: DataTypes.INTEGER,

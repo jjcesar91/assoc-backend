@@ -42,6 +42,7 @@ jobs:
 
             REBUILD_USERS=false
             REBUILD_PAYMENTS=false
+            REBUILD_ACTIVITIES=false
 
             # Ricreazione robusta al bug di docker-compose v1 "KeyError: 'ContainerConfig'":
             # si rimuovono i container prima di ricrearli, cosi' compose non tenta di
@@ -60,6 +61,7 @@ jobs:
               docker-compose restart nginx || true
               REBUILD_USERS=true
               REBUILD_PAYMENTS=true
+              REBUILD_ACTIVITIES=true
             else
               # Mappa i path services/<nome>/... sul relativo servizio compose <nome>_ms
               SERVICES=$(echo "$CHANGED" | sed -n 's#^services/\([^/]*\)/.*#\1_ms#p' | sort -u)
@@ -75,6 +77,9 @@ jobs:
               if echo "$SERVICES" | grep -qw payments_ms; then
                 REBUILD_PAYMENTS=true
               fi
+              if echo "$SERVICES" | grep -qw activities_ms; then
+                REBUILD_ACTIVITIES=true
+              fi
             fi
 
             # Mostra i log delle migrazioni solo se users_ms e' stato ricostruito
@@ -89,6 +94,24 @@ jobs:
               echo "Waiting for payments_ms to complete migrations..."
               sleep 20
               docker logs payments_ms 2>&1 | grep -E "\[entrypoint\]|\[baseline\]|migrat" || true
+            fi
+
+            # activities_ms esegue al boot sync({alter:true}) + il backfill dei dati
+            # (es. CorsoOrari per i corsi con un solo giorno). Il backfill non blocca
+            # l'avvio del servizio, quindi qui verifichiamo esplicitamente l'esito.
+            if [ "$REBUILD_ACTIVITIES" = "true" ]; then
+              echo "Waiting for activities_ms to complete migrations..."
+              sleep 20
+              ACTIVITIES_LOGS=$(docker logs activities_ms 2>&1 | grep -E "synced successfully|Backfill|fallito" || true)
+              echo "$ACTIVITIES_LOGS"
+              if echo "$ACTIVITIES_LOGS" | grep -q "fallito"; then
+                echo "ERRORE: il backfill di activities_ms e' fallito."
+                exit 1
+              fi
+              if ! echo "$ACTIVITIES_LOGS" | grep -q "synced successfully"; then
+                echo "ERRORE: activities_ms non ha completato la sincronizzazione del database."
+                exit 1
+              fi
             fi
 
             echo "Deploy completed."
