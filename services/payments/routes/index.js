@@ -8,6 +8,7 @@ const GruppoController = require('../controllers/GruppoController');
 const VociConfigController = require('../controllers/VociConfigController');
 const FornitoreController = require('../controllers/FornitoreController');
 const RicevutaController = require('../controllers/RicevutaController');
+const SocioOrdineController = require('../controllers/SocioOrdineController');
 const authenticateToken = require('../middleware/auth');
 
 router.get('/health', (req, res) => {
@@ -70,6 +71,15 @@ router.use(authenticateToken);
 
 // Generazione token (autenticata) — chiamata all'invio della comunicazione proforma
 router.post('/ricevuta-tokens', RicevutaController.createToken);
+
+// --- Area soci: ordini creati dal cliente ---
+// Devono stare PRIMA di router.get('/') e router.put('/:id') per non essere
+// intercettate dalle rotte generiche dei pagamenti.
+router.get('/socio/catalogo', SocioOrdineController.getCatalogo);
+router.get('/socio/conti-bonifico', SocioOrdineController.getContiBonifico);
+router.get('/socio/ordini', SocioOrdineController.getOrdini);
+router.post('/socio/ordini', SocioOrdineController.createOrdine);
+router.post('/socio/ordini/:id/ricevuta-token', SocioOrdineController.createRicevutaToken);
 
 // Download autenticato della ricevuta caricata (operatore/admin)
 router.get('/:id/ricevuta-file', RicevutaController.downloadByPayment);

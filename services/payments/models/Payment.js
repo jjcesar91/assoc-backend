@@ -63,6 +63,12 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.STRING,
       allowNull: true,
     },
+    // Chi ha creato l'ordine: 'backoffice' (operatore) | 'cliente' (socio dall'area soci)
+    origine: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      defaultValue: 'backoffice',
+    },
     // Stato ricevuta a livello di ordine (unico, condiviso da tutti i token dell'ordine)
     ricevuta_file_path: {
       type: DataTypes.STRING,

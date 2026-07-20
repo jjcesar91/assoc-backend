@@ -231,6 +231,7 @@ services:
       - JWT_SECRET=super_secret_key_change_me
       - INTERNAL_API_SECRET=internal_secret_change_me
       - USERS_SERVICE_URL=http://users_ms:3000
+      - PRODUCTS_SERVICE_URL=http://products_ms:3000
     ports:
       - "3006:3000"
       - "9234:9229"
