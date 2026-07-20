@@ -31,6 +31,11 @@ module.exports = (sequelize, DataTypes) => {
     istruzioni_pagamento: {
       type: DataTypes.TEXT,
       allowNull: true
+    },
+    predefinito: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false
     }
   }, {
     sequelize,

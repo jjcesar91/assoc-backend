@@ -17,7 +17,7 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: false,
       references: { model: 'socios', key: 'id' }
     },
-    // 'ordine' | 'abbonamento' | 'iscrizione_attivita' | 'comunicazione' | 'accesso_frontend' | 'nota'
+    // 'ordine' | 'abbonamento' | 'iscrizione_attivita' | 'comunicazione' | 'accesso_frontend' | 'nota' | 'ricevuta'
     tipo: {
       type: DataTypes.STRING(50),
       allowNull: false,

@@ -234,13 +234,13 @@ async function doUpload(req, res, { allowReplace }) {
     record.used_at = now;
     await record.save();
 
-    // Notifica agli amministratori della società + superuser (solo al primo
-    // caricamento, non sulle sostituzioni). Non blocca la risposta.
-    if (!allowReplace) {
-      notifyRicevutaUploaded(payment).catch((e) =>
-        console.error('Notifica ricevuta caricata fallita:', e.message)
-      );
-    }
+    // Notifica il users-service: registra l'evento nello storico del socio e,
+    // solo al primo caricamento, invia l'email agli amministratori della società
+    // (le sostituzioni finiscono a storico ma non generano email).
+    // Non blocca la risposta.
+    notifyRicevutaUploaded(payment, { sostituzione: allowReplace }).catch((e) =>
+      console.error('Notifica ricevuta caricata fallita:', e.message)
+    );
 
     return res.json({
       status: 'uploaded',
@@ -255,14 +255,16 @@ async function doUpload(req, res, { allowReplace }) {
 }
 
 // Notifica al servizio users che una ricevuta è stata caricata.
-// Il servizio users si occupa di risolvere i destinatari (admin società + superuser)
-// e di inviare l'email. Chiamata interna protetta da secret condiviso.
-async function notifyRicevutaUploaded(payment) {
+// Il servizio users registra l'evento nello storico del socio e, se non si tratta
+// di una sostituzione, risolve i destinatari (admin società + superuser) e invia
+// l'email. Chiamata interna protetta da secret condiviso.
+async function notifyRicevutaUploaded(payment, { sostituzione = false } = {}) {
   const usersUrl = process.env.USERS_SERVICE_URL || 'http://users_ms:3000';
   const secret = process.env.INTERNAL_API_SECRET || 'internal_secret_change_me';
 
   const body = {
     societa_id: payment.societa_id,
+    sostituzione,
     ordine: {
       id: payment.id,
       numero: payment.numero_ricevuta || `#${payment.id}`,

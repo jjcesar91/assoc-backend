@@ -1,4 +1,4 @@
-const { Societa } = require('../models');
+const { Societa, SocioStorico } = require('../models');
 const { sendEmail } = require('../utils/mailService');
 
 function formatData(dt) {
@@ -60,13 +60,53 @@ function buildHtml({ societa, ordine, socio, ricevuta }) {
     `;
 }
 
+// Registra il caricamento della ricevuta nello storico del socio.
+// Il file NON viene copiato qui: resta nel payments-service e la riga di storico
+// conserva solo il payment_id, che il frontend usa per aprirlo tramite
+// l'endpoint autenticato /payments/api/:id/ricevuta-file.
+// Non deve mai far fallire la notifica: gli errori vengono solo loggati.
+async function logRicevutaAStorico({ ordine, socio, ricevuta, sostituzione }) {
+    if (!socio?.id) return; // ordine non collegato a un socio: niente storico
+    try {
+        const numero = ordine?.numero ? ` ${ordine.numero}` : '';
+        const nomeFile = ricevuta?.nome_file || 'ricevuta';
+        await SocioStorico.create({
+            socio_id: socio.id,
+            tipo: 'ricevuta',
+            azione: sostituzione
+                ? `Ricevuta sostituita per l'ordine${numero}: ${nomeFile}`
+                : `Ricevuta caricata per l'ordine${numero}: ${nomeFile}`,
+            dettagli: {
+                payment_id: ordine?.id || null,
+                numero_ordine: ordine?.numero || null,
+                nome_file: ricevuta?.nome_file || null,
+                sostituzione: !!sostituzione,
+            },
+            owner_tipo: 'sistema',
+            owner_label: socio?.nominativo || ordine?.intestatario || 'Socio',
+            data_evento: ricevuta?.uploaded_at ? new Date(ricevuta.uploaded_at) : new Date(),
+        });
+    } catch (e) {
+        console.error('Errore scrittura storico ricevuta:', e.message);
+    }
+}
+
 const InternalController = {
     // POST /api/internal/ricevuta-uploaded
     ricevutaUploaded: async (req, res) => {
         try {
-            const { societa_id, ordine, socio, ricevuta } = req.body || {};
+            const { societa_id, ordine, socio, ricevuta, sostituzione } = req.body || {};
             if (!societa_id) {
                 return res.status(400).json({ error: 'societa_id obbligatorio' });
+            }
+
+            // Prima dell'invio email: lo storico va scritto anche se la società
+            // non ha destinatari configurati o se il recupero admin fallisce.
+            await logRicevutaAStorico({ ordine, socio, ricevuta, sostituzione });
+
+            // Le sostituzioni vengono registrate a storico ma non notificate via email.
+            if (sostituzione) {
+                return res.status(200).json({ sent: 0, logged: true });
             }
 
             const societa = await Societa.findByPk(societa_id);

@@ -1,4 +1,5 @@
-const { Conto } = require('../models');
+const { Op } = require('sequelize');
+const { Conto, sequelize } = require('../models');
 
 exports.getAll = async (req, res) => {
     try {
@@ -39,9 +40,34 @@ exports.update = async (req, res) => {
         const id = req.params.id;
         const record = await Conto.findByPk(id);
         if (!record) return res.status(404).json({ error: 'Conto not found' });
-        await record.update(req.body);
+        // Il flag predefinito si imposta solo tramite l'endpoint dedicato,
+        // che garantisce l'unicità del conto predefinito per società.
+        const { predefinito, ...payload } = req.body;
+        await record.update(payload);
         res.json(record);
     } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// Imposta il conto come predefinito per la sua società, azzerando il flag su tutti gli altri.
+exports.setPredefinito = async (req, res) => {
+    try {
+        const id = req.params.id;
+        const record = await Conto.findByPk(id);
+        if (!record) return res.status(404).json({ error: 'Conto not found' });
+
+        await sequelize.transaction(async (t) => {
+            await Conto.update(
+                { predefinito: false },
+                { where: { societa_id: record.societa_id, id: { [Op.ne]: record.id } }, transaction: t }
+            );
+            await record.update({ predefinito: true }, { transaction: t });
+        });
+
+        res.json(record);
+    } catch (error) {
+        console.error(error);
         res.status(500).json({ error: error.message });
     }
 };

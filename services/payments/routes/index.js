@@ -77,6 +77,7 @@ router.get('/:id/ricevuta-file', RicevutaController.downloadByPayment);
 router.get('/conti', ContoController.getBySocieta);
 router.post('/conti', ContoController.create);
 router.put('/conti/:id', ContoController.update);
+router.put('/conti/:id/predefinito', ContoController.setPredefinito);
 router.delete('/conti/:id', ContoController.delete);
 
 router.get('/gruppi', GruppoController.getBySocieta);
