@@ -245,6 +245,12 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.DATEONLY,
       allowNull: true
     },
+    // Scadenza del documento d'identità del presidente: valorizzato solo sul
+    // socio che ricopre questo ruolo (usato dall'automazione "doc_presidente").
+    scadenza_doc_presidente: {
+      type: DataTypes.DATEONLY,
+      allowNull: true
+    },
     etichette: {
       type: DataTypes.TEXT,
       allowNull: true

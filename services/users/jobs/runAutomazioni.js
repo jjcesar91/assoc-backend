@@ -3,7 +3,7 @@
 const { Op } = require('sequelize');
 const { Societa, Socio, AutomazioneConfig, AutomazioneInvio } = require('../models');
 const { TIPI, getDefinizione, resolveConfig } = require('../utils/automazioniRegistry');
-const { computeOccorrenzaSocieta, isNellaFinestraInvio, todayUTC, addDays, toDateOnly } = require('../utils/deadlineCalculator');
+const { computeOccorrenzaSocieta, computeOccorrenzaSocioField, isNellaFinestraInvio, todayUTC } = require('../utils/deadlineCalculator');
 const { sendEmail } = require('../utils/mailService');
 
 const PAYMENTS_SERVICE_URL = process.env.PAYMENTS_SERVICE_URL || 'http://payments_ms:3000';
@@ -18,20 +18,20 @@ function formatDataIt(dateStr) {
 // Registra/aggiorna la riga di log per una specifica occorrenza (chiave di
 // idempotenza). Un solo run "vincente" per occorrenza: se esiste già un
 // log con esito INVIATO il chiamante non deve nemmeno provare a inviare.
-async function registraInvio({ societaId, tipo, socioId, scadenzaRiferimento, destinatario, esito, dettaglioErrore }) {
-  const where = { societa_id: societaId, tipo, socio_id: socioId ?? null, scadenza_riferimento: scadenzaRiferimento };
+async function registraInvio({ societaId, tipo, socioId, riferimentoExtra, scadenzaRiferimento, destinatario, esito, dettaglioErrore }) {
+  const where = { societa_id: societaId, tipo, socio_id: socioId ?? null, riferimento_extra: riferimentoExtra ?? null, scadenza_riferimento: scadenzaRiferimento };
   const [row] = await AutomazioneInvio.findOrCreate({ where, defaults: { ...where, destinatario, esito, dettaglio_errore: dettaglioErrore, data_invio: new Date() } });
   await row.update({ destinatario, esito, dettaglio_errore: dettaglioErrore || null, data_invio: new Date() });
 }
 
-async function giaInviata({ societaId, tipo, socioId, scadenzaRiferimento }) {
+async function giaInviata({ societaId, tipo, socioId, riferimentoExtra, scadenzaRiferimento }) {
   const row = await AutomazioneInvio.findOne({
-    where: { societa_id: societaId, tipo, socio_id: socioId ?? null, scadenza_riferimento: scadenzaRiferimento, esito: 'INVIATO' },
+    where: { societa_id: societaId, tipo, socio_id: socioId ?? null, riferimento_extra: riferimentoExtra ?? null, scadenza_riferimento: scadenzaRiferimento, esito: 'INVIATO' },
   });
   return !!row;
 }
 
-async function inviaEmailAutomazione({ tipo, def, config, societa, to, scadenza, contatore }) {
+async function inviaEmailAutomazione({ def, config, societa, to, scadenza, contatore }) {
   try {
     if (!to) throw new Error('Destinatario mancante');
     const subject = config.oggetto_email || def.oggettoDefault(societa);
@@ -46,37 +46,49 @@ async function inviaEmailAutomazione({ tipo, def, config, societa, to, scadenza,
   }
 }
 
-async function processTipoSocieta(tipo, def, config, societa, today, contatore) {
-  const occorrenza = computeOccorrenzaSocieta(tipo, config, societa, today);
-  if (!isNellaFinestraInvio(occorrenza, today)) return;
-
-  const scadenza = occorrenza.scadenza;
-  if (await giaInviata({ societaId: societa.id, tipo, socioId: null, scadenzaRiferimento: scadenza })) {
-    contatore.saltati += 1;
-    return;
-  }
-
-  const to = societa.email || societa.pec;
-  const { esito, errore } = await inviaEmailAutomazione({ tipo, def, config, societa, to, scadenza, contatore });
-  await registraInvio({ societaId: societa.id, tipo, socioId: null, scadenzaRiferimento: scadenza, destinatario: to, esito, dettaglioErrore: errore });
-}
-
-async function processCertificatoMedico(tipo, def, config, societa, today, contatore) {
-  const soci = await Socio.findAll({ where: { societa_id: societa.id, scadenza_certificato: { [Op.not]: null } } });
+// Tipi con destinatario 'socio_field' (organo_amministrazione, doc_presidente,
+// certificato_medico): la scadenza è il valore di un campo del socio; se non
+// impostato, nessuna comunicazione viene inviata. Riceve solo il socio su cui
+// il campo è valorizzato.
+async function processSocioField(tipo, def, config, societa, today, contatore) {
+  const soci = await Socio.findAll({ where: { societa_id: societa.id, [def.socioField]: { [Op.not]: null } } });
   for (const socio of soci) {
-    const scadenza = socio.scadenza_certificato; // DATEONLY -> 'YYYY-MM-DD'
-    const target = toDateOnly(addDays(new Date(scadenza), -config.giorni_anticipo));
-    const occorrenza = { scadenza, dataInvioTarget: target };
+    const valore = socio[def.socioField];
+    const occorrenza = computeOccorrenzaSocioField(config, valore);
     if (!isNellaFinestraInvio(occorrenza, today)) continue;
+    const scadenza = occorrenza.scadenza;
     if (await giaInviata({ societaId: societa.id, tipo, socioId: socio.id, scadenzaRiferimento: scadenza })) {
       contatore.saltati += 1;
       continue;
     }
-    const { esito, errore } = await inviaEmailAutomazione({ tipo, def, config, societa, to: socio.email, scadenza, contatore });
+    const { esito, errore } = await inviaEmailAutomazione({ def, config, societa, to: socio.email, scadenza, contatore });
     await registraInvio({ societaId: societa.id, tipo, socioId: socio.id, scadenzaRiferimento: scadenza, destinatario: socio.email, esito, dettaglioErrore: errore });
   }
 }
 
+// Tipi con destinatario 'tutti_soci' (bilancio, runts, contributi_pubblici,
+// cu, attivita_didattiche): la scadenza è unica per la società, ma l'email va
+// a ciascun socio (trasparenza verso gli associati) — un invio/log per socio.
+async function processTuttiSoci(tipo, def, config, societa, today, contatore) {
+  const occorrenza = computeOccorrenzaSocieta(tipo, config, societa, today);
+  if (!isNellaFinestraInvio(occorrenza, today)) return;
+  const scadenza = occorrenza.scadenza;
+
+  const soci = await Socio.findAll({ where: { societa_id: societa.id, email: { [Op.not]: null } } });
+  for (const socio of soci) {
+    if (!socio.email) continue;
+    if (await giaInviata({ societaId: societa.id, tipo, socioId: socio.id, scadenzaRiferimento: scadenza })) {
+      contatore.saltati += 1;
+      continue;
+    }
+    const { esito, errore } = await inviaEmailAutomazione({ def, config, societa, to: socio.email, scadenza, contatore });
+    await registraInvio({ societaId: societa.id, tipo, socioId: socio.id, scadenzaRiferimento: scadenza, destinatario: socio.email, esito, dettaglioErrore: errore });
+  }
+}
+
+// Tipo 'abbonamento' (destinatario 'per_abbonamento'): un socio può avere più
+// abbonamenti attivi con scadenze diverse (o anche uguali) — ognuno genera un
+// invio/log indipendente, distinto tramite riferimento_extra (abbonamento_id).
 async function processAbbonamento(tipo, def, config, societa, today, contatore) {
   let abbonamenti = [];
   try {
@@ -91,18 +103,18 @@ async function processAbbonamento(tipo, def, config, societa, today, contatore) 
 
   for (const item of abbonamenti) {
     if (!item.socio_id || !item.data_scadenza_abbonamento) continue;
-    const scadenza = item.data_scadenza_abbonamento;
-    const target = toDateOnly(addDays(new Date(scadenza), -config.giorni_anticipo));
-    const occorrenza = { scadenza, dataInvioTarget: target };
+    const occorrenza = computeOccorrenzaSocioField(config, item.data_scadenza_abbonamento);
     if (!isNellaFinestraInvio(occorrenza, today)) continue;
-    if (await giaInviata({ societaId: societa.id, tipo, socioId: item.socio_id, scadenzaRiferimento: scadenza })) {
+    const scadenza = occorrenza.scadenza;
+    const riferimentoExtra = item.abbonamento_id ?? null;
+    if (await giaInviata({ societaId: societa.id, tipo, socioId: item.socio_id, riferimentoExtra, scadenzaRiferimento: scadenza })) {
       contatore.saltati += 1;
       continue;
     }
     const socio = await Socio.findByPk(item.socio_id);
     const to = socio?.email;
-    const { esito, errore } = await inviaEmailAutomazione({ tipo, def, config, societa, to, scadenza, contatore });
-    await registraInvio({ societaId: societa.id, tipo, socioId: item.socio_id, scadenzaRiferimento: scadenza, destinatario: to, esito, dettaglioErrore: errore });
+    const { esito, errore } = await inviaEmailAutomazione({ def, config, societa, to, scadenza, contatore });
+    await registraInvio({ societaId: societa.id, tipo, socioId: item.socio_id, riferimentoExtra, scadenzaRiferimento: scadenza, destinatario: to, esito, dettaglioErrore: errore });
   }
 }
 
@@ -130,11 +142,11 @@ async function runAutomazioniCheck({ societaId } = {}) {
       if (!config.applicabile || !config.attiva) continue;
 
       try {
-        if (def.ambito === 'societa') {
-          await processTipoSocieta(tipo, def, config, societa, today, contatore);
-        } else if (def.strategy === 'socio_field') {
-          await processCertificatoMedico(tipo, def, config, societa, today, contatore);
-        } else if (def.strategy === 'payments_abbonamento') {
+        if (def.destinatario === 'tutti_soci') {
+          await processTuttiSoci(tipo, def, config, societa, today, contatore);
+        } else if (def.destinatario === 'socio_field') {
+          await processSocioField(tipo, def, config, societa, today, contatore);
+        } else if (def.destinatario === 'per_abbonamento') {
           await processAbbonamento(tipo, def, config, societa, today, contatore);
         }
       } catch (err) {

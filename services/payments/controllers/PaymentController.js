@@ -596,16 +596,29 @@ exports.abbonamentiScadenza = async (req, res) => {
                 data_scadenza_abbonamento: { [Op.not]: null },
                 stato_pagamento: { [Op.notLike]: '3.%' },
             },
-            attributes: ['socio_id', 'intestatario', 'data_scadenza_abbonamento'],
+            attributes: ['id', 'socio_id', 'intestatario', 'product_id', 'data_scadenza_abbonamento'],
         });
-        const result = payments
-            .filter(p => p.socio_id != null)
-            .map(p => ({
-                socio_id: p.socio_id,
-                intestatario: p.intestatario,
-                data_scadenza_abbonamento: p.data_scadenza_abbonamento,
-            }));
-        res.status(200).json(result);
+        // Un abbonamento pagato a rate genera più righe Payment con lo stesso
+        // product_id e la stessa scadenza: le raggruppiamo per non generare più
+        // promemoria per lo stesso abbonamento. abbonamento_id identifica
+        // l'abbonamento (product_id, con fallback sul singolo payment id se il
+        // prodotto non è tracciato) ed è usato dal chiamante come chiave di
+        // idempotenza per distinguere abbonamenti diversi con la stessa scadenza.
+        const byAbbonamento = new Map();
+        for (const p of payments) {
+            if (p.socio_id == null) continue;
+            const abbonamentoId = p.product_id ?? p.id;
+            const key = `${p.socio_id}:${abbonamentoId}:${p.data_scadenza_abbonamento}`;
+            if (!byAbbonamento.has(key)) {
+                byAbbonamento.set(key, {
+                    socio_id: p.socio_id,
+                    intestatario: p.intestatario,
+                    abbonamento_id: abbonamentoId,
+                    data_scadenza_abbonamento: p.data_scadenza_abbonamento,
+                });
+            }
+        }
+        res.status(200).json(Array.from(byAbbonamento.values()));
     } catch (err) {
         console.error('abbonamentiScadenza error:', err);
         res.status(500).json({ error: err.message });

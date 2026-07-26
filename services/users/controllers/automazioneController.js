@@ -2,7 +2,7 @@
 
 const { Op } = require('sequelize');
 const { Societa, Socio, AutomazioneConfig, AutomazioneInvio } = require('../models');
-const { TIPI, getDefinizione, resolveConfig } = require('../utils/automazioniRegistry');
+const { TIPI, getDefinizione, getAmbito, resolveConfig } = require('../utils/automazioniRegistry');
 const { computeOccorrenzaSocieta } = require('../utils/deadlineCalculator');
 const { runAutomazioniCheck } = require('../jobs/runAutomazioni');
 
@@ -46,8 +46,9 @@ class AutomazioneController {
         const saved = savedByTipo.get(tipo);
         const config = resolveConfig(tipo, saved, societa);
 
+        const ambito = getAmbito(tipo);
         let prossimoInvio = null;
-        if (def.ambito === 'societa') {
+        if (ambito === 'societa') {
           const occorrenza = computeOccorrenzaSocieta(tipo, config, societa);
           prossimoInvio = occorrenza?.scadenza ?? null;
         }
@@ -60,19 +61,18 @@ class AutomazioneController {
         return {
           tipo,
           categoria: def.categoria,
-          ambito: def.ambito,
+          ambito,
+          destinatario: def.destinatario,
           label: def.label,
           applicabile: config.applicabile,
           attiva: config.attiva,
           giorni_anticipo: config.giorni_anticipo,
-          data_riferimento: config.data_riferimento,
           extra_config: config.extra_config,
           oggetto_email: config.oggetto_email,
           testo_email: config.testo_email,
           prossimo_invio: prossimoInvio,
           ultimo_invio: ultimoInvioRow?.data_invio ?? null,
-          richiedeDataRiferimento: def.strategy === 'manual_date',
-          richiedeExtraBiennale: def.strategy === 'biannual_calendar',
+          richiedeExtraBiennale: def.deadlineStrategy === 'biannual_calendar',
         };
       }));
 
@@ -100,7 +100,6 @@ class AutomazioneController {
         const payload = {
           attiva: !!rule.attiva,
           giorni_anticipo: Number.isInteger(rule.giorni_anticipo) ? rule.giorni_anticipo : getDefinizione(rule.tipo).giorniAnticipoDefault,
-          data_riferimento: rule.data_riferimento || null,
           extra_config: rule.extra_config || null,
           oggetto_email: rule.oggetto_email || null,
           testo_email: rule.testo_email || null,

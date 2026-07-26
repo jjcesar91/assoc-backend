@@ -54,35 +54,33 @@ function scegliOccorrenza(candidates, today) {
 
 /**
  * Calcola l'occorrenza corrente (scadenza + data target di invio) per le
- * automazioni a livello di società (ambito 'societa'). Ritorna null se il
- * tipo non è applicabile o non calcolabile (es. manual_date senza data).
+ * automazioni con un'unica scadenza a livello di società (destinatario
+ * 'tutti_soci'). Ritorna null se il tipo non è applicabile o non gestito da
+ * questa funzione (le strategie per-socio si calcolano altrove, dal job).
  */
 function computeOccorrenzaSocieta(tipo, config, societa, today = todayUTC()) {
   const def = getDefinizione(tipo);
-  if (def.ambito !== 'societa') return null;
+  if (def.destinatario !== 'tutti_soci') return null;
 
   const anno = today.getUTCFullYear();
   let candidates = [];
 
-  if (def.strategy === 'manual_date') {
-    if (!config?.data_riferimento) return null;
-    candidates = [new Date(config.data_riferimento)];
-  } else if (def.strategy === 'anno_associativo_offset') {
+  if (def.deadlineStrategy === 'anno_associativo_offset') {
     for (const y of [anno - 2, anno - 1, anno, anno + 1]) {
       candidates.push(addDays(fineAnnoAssociativo(y, societa), def.offsetGiorni));
     }
-  } else if (def.strategy === 'fixed_calendar') {
+  } else if (def.deadlineStrategy === 'fixed_calendar') {
     for (const y of [anno - 1, anno, anno + 1]) {
       candidates.push(fromParts(y, def.mese, def.giorno));
     }
-  } else if (def.strategy === 'biannual_calendar') {
+  } else if (def.deadlineStrategy === 'biannual_calendar') {
     const extra = { ...def.defaultExtra, ...(config?.extra_config || {}) };
     for (const y of [anno - 1, anno, anno + 1]) {
       candidates.push(fromParts(y, extra.mese1, extra.giorno1));
       candidates.push(fromParts(y, extra.mese2, extra.giorno2));
     }
   } else {
-    return null; // strategie per-socio non gestite qui
+    return null;
   }
 
   const scadenza = scegliOccorrenza(candidates, today);
@@ -98,10 +96,28 @@ function computeOccorrenzaSocieta(tipo, config, societa, today = todayUTC()) {
 }
 
 /**
- * true se, alla data `today`, l'automazione a livello di società deve
- * considerarsi "nella finestra di invio" (>= target di invio e <= scadenza).
- * Usato dal job giornaliero; l'idempotenza vera e propria è garantita dal
- * controllo sul log (AutomazioneInvio) fatto dal chiamante.
+ * Calcola l'occorrenza (scadenza + data target di invio) per un'automazione
+ * il cui unico dato è un valore data preso da un campo del socio (es.
+ * certificato medico, organo di amministrazione, doc. presidente). Ritorna
+ * null se il valore non è impostato: in tal caso non va inviata nessuna
+ * comunicazione.
+ */
+function computeOccorrenzaSocioField(config, valoreCampo) {
+  if (!valoreCampo) return null;
+  const scadenza = new Date(valoreCampo);
+  const giorniAnticipo = config?.giorni_anticipo ?? 15;
+  const dataInvioTarget = addDays(scadenza, -giorniAnticipo);
+  return {
+    scadenza: toDateOnly(scadenza),
+    dataInvioTarget: toDateOnly(dataInvioTarget),
+  };
+}
+
+/**
+ * true se, alla data `today`, l'automazione deve considerarsi "nella finestra
+ * di invio" (>= target di invio e <= scadenza). Usato dal job giornaliero;
+ * l'idempotenza vera e propria è garantita dal controllo sul log
+ * (AutomazioneInvio) fatto dal chiamante.
  */
 function isNellaFinestraInvio(occorrenza, today = todayUTC()) {
   if (!occorrenza) return false;
@@ -116,5 +132,6 @@ module.exports = {
   toDateOnly,
   fineAnnoAssociativo,
   computeOccorrenzaSocieta,
+  computeOccorrenzaSocioField,
   isNellaFinestraInvio,
 };

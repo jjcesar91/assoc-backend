@@ -28,11 +28,19 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.INTEGER,
       allowNull: true
     },
-    // Occorrenza specifica della scadenza: è la chiave di idempotenza che
-    // impedisce l'invio duplicato quando il controllo gira più volte.
+    // Occorrenza specifica della scadenza: è (parte del)la chiave di
+    // idempotenza che impedisce l'invio duplicato quando il controllo gira
+    // più volte.
     scadenza_riferimento: {
       type: DataTypes.DATEONLY,
       allowNull: false
+    },
+    // Distingue più promemoria dello stesso tipo/socio/scadenza (es. due
+    // abbonamenti diversi con la stessa data di scadenza): per "abbonamento"
+    // contiene il product_id (o l'id del pagamento come fallback).
+    riferimento_extra: {
+      type: DataTypes.INTEGER,
+      allowNull: true
     },
     destinatario: {
       type: DataTypes.STRING,
