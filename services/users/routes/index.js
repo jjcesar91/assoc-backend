@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const socioRoutes = require('./socioRoutes');
 const societaRoutes = require('./societaRoutes');
+const automazioneRoutes = require('./automazioneRoutes');
 const authenticateToken = require('../middleware/auth');
 const requireInternal = require('../middleware/requireInternal');
 const InternalController = require('../controllers/internalController');
@@ -16,5 +17,6 @@ router.post('/internal/ricevuta-uploaded', requireInternal, InternalController.r
 router.use(authenticateToken);
 router.use('/soci', socioRoutes);
 router.use('/societa', societaRoutes);
+router.use('/automazioni', automazioneRoutes);
 
 module.exports = router;

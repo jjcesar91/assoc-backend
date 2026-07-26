@@ -10,10 +10,14 @@ const FornitoreController = require('../controllers/FornitoreController');
 const RicevutaController = require('../controllers/RicevutaController');
 const SocioOrdineController = require('../controllers/SocioOrdineController');
 const authenticateToken = require('../middleware/auth');
+const requireInternal = require('../middleware/requireInternal');
 
 router.get('/health', (req, res) => {
     res.json({ status: 'OK', service: process.env.SERVICE_NAME || 'template-service' });
 });
+
+// --- Rotte interne (service-to-service, protette da secret) — PRIMA dell'auth utente ---
+router.get('/internal/abbonamenti-scadenza', requireInternal, PaymentController.abbonamentiScadenza);
 
 // --- Upload ricevute (storage su disco, volume condiviso /app/uploads) ---
 const ricevuteDir = '/app/uploads/ricevute';

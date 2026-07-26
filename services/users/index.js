@@ -1,7 +1,9 @@
 const express = require('express');
 const cors = require('cors');
+const cron = require('node-cron');
 const db = require('./models');
 const routes = require('./routes');
+const { runAutomazioniCheck } = require('./jobs/runAutomazioni');
 require('dotenv').config();
 
 const app = express();
@@ -47,6 +49,13 @@ db.sequelize.authenticate()
     app.listen(PORT, () => {
       console.log(`Server is running on port ${PORT}`);
     });
+
+    // Controllo automazioni email: un solo run giornaliero (non polling
+    // continuo) per non sovraccaricare le risorse. Orario notturno/mattutino
+    // per non interferire con l'operatività.
+    cron.schedule('0 6 * * *', () => {
+      runAutomazioniCheck().catch(err => console.error('Errore job automazioni:', err));
+    }, { timezone: 'Europe/Rome' });
   })
   .catch(err => {
     console.error('Unable to connect to the database:', err);

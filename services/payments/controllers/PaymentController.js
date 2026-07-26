@@ -578,3 +578,36 @@ exports.importOdooOrdini = async (req, res) => {
         res.status(500).json({ error: err.message || 'Errore durante l\'import degli ordini Odoo' });
     }
 };
+
+// Endpoint interno (service-to-service, protetto da requireInternal) usato dal
+// job di automazioni email del servizio users per l'automazione "abbonamento":
+// restituisce gli abbonamenti con scadenza impostata per una società, esclusi
+// quelli annullati (stato_pagamento che inizia con '3.').
+exports.abbonamentiScadenza = async (req, res) => {
+    try {
+        const { societaId } = req.query;
+        if (!societaId) {
+            return res.status(400).json({ error: 'societaId is required' });
+        }
+        const payments = await Payment.findAll({
+            where: {
+                societa_id: societaId,
+                quote_types: { [Op.iLike]: '%subscription%' },
+                data_scadenza_abbonamento: { [Op.not]: null },
+                stato_pagamento: { [Op.notLike]: '3.%' },
+            },
+            attributes: ['socio_id', 'intestatario', 'data_scadenza_abbonamento'],
+        });
+        const result = payments
+            .filter(p => p.socio_id != null)
+            .map(p => ({
+                socio_id: p.socio_id,
+                intestatario: p.intestatario,
+                data_scadenza_abbonamento: p.data_scadenza_abbonamento,
+            }));
+        res.status(200).json(result);
+    } catch (err) {
+        console.error('abbonamentiScadenza error:', err);
+        res.status(500).json({ error: err.message });
+    }
+};
