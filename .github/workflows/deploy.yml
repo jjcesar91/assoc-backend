@@ -2,7 +2,7 @@ name: Deploy Backend
 
 on:
   push:
-    branches: [master]
+    branches: [dev]
 
 jobs:
   deploy:
@@ -26,7 +26,7 @@ jobs:
             export COMPOSE_DOCKER_CLI_BUILD=0
 
             BEFORE=$(git rev-parse HEAD)
-            git pull origin master
+            git pull origin dev
             AFTER=$(git rev-parse HEAD)
 
             if [ "$BEFORE" = "$AFTER" ]; then
