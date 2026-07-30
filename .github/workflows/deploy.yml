@@ -17,13 +17,16 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           script: |
             set -e
-            cd ${{ secrets.DEPLOY_PATH }}
+            cd ${{ secrets.DEPLOY_PATH_PROD }}
 
             # Builda con il builder classico: le immagini cosi' generate includono
             # il metadato "ContainerConfig" richiesto da docker-compose v1, evitando
             # il bug "KeyError: 'ContainerConfig'" durante la ricreazione dei container.
             export DOCKER_BUILDKIT=0
             export COMPOSE_DOCKER_CLI_BUILD=0
+            # Nome progetto dedicato: isola rete/volumi dallo stack dev (che vive
+            # nella cartella "docker" con project name di default "docker").
+            export COMPOSE_PROJECT_NAME=backend_prod
 
             BEFORE=$(git rev-parse HEAD)
             git pull origin master
@@ -86,14 +89,14 @@ jobs:
             if [ "$REBUILD_USERS" = "true" ]; then
               echo "Waiting for users_ms to complete migrations..."
               sleep 20
-              docker logs users_ms 2>&1 | grep -E "\[entrypoint\]|Migration" || true
+              docker logs users_ms_prod 2>&1 | grep -E "\[entrypoint\]|Migration" || true
             fi
 
             # Idem per payments_ms (baseline + sequelize-cli db:migrate all'avvio)
             if [ "$REBUILD_PAYMENTS" = "true" ]; then
               echo "Waiting for payments_ms to complete migrations..."
               sleep 20
-              docker logs payments_ms 2>&1 | grep -E "\[entrypoint\]|\[baseline\]|migrat" || true
+              docker logs payments_ms_prod 2>&1 | grep -E "\[entrypoint\]|\[baseline\]|migrat" || true
             fi
 
             # activities_ms esegue al boot sync({alter:true}) + il backfill dei dati
@@ -102,7 +105,7 @@ jobs:
             if [ "$REBUILD_ACTIVITIES" = "true" ]; then
               echo "Waiting for activities_ms to complete migrations..."
               sleep 20
-              ACTIVITIES_LOGS=$(docker logs activities_ms 2>&1 | grep -E "synced successfully|Backfill|fallito" || true)
+              ACTIVITIES_LOGS=$(docker logs activities_ms_prod 2>&1 | grep -E "synced successfully|Backfill|fallito" || true)
               echo "$ACTIVITIES_LOGS"
               if echo "$ACTIVITIES_LOGS" | grep -q "fallito"; then
                 echo "ERRORE: il backfill di activities_ms e' fallito."
