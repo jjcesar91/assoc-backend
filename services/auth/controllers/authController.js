@@ -1,5 +1,6 @@
 const { User } = require('../models');
 const jwt = require('jsonwebtoken');
+const { randomUUID } = require('crypto');
 const { ValidationError, Op } = require('sequelize');
 
 const {
@@ -261,6 +262,30 @@ exports.updatePassword = async (req, res) => {
     } catch (error) {
         res.status(400).json({ error: formatErrorMessage(error) });
     }
+};
+
+// ── Ingresso all'area riservata soci su WordPress ────────────────────────────
+// GET /api/wp-root-token (solo role 'socio')
+// Genera un JWT usa-e-getta (90s, verificato dal plugin WP "Soci Gate SSO")
+// per aprire la sezione /root/ del sito senza credenziali WordPress.
+exports.getWpRootAccessToken = async (req, res) => {
+    if (!isSocioRole(req.user.role)) {
+        return res.status(403).json({ error: 'Accesso riservato ai soci' });
+    }
+
+    const wpSecret = process.env.WP_SSO_SECRET;
+    const wpBaseUrl = process.env.WP_BASE_URL;
+    if (!wpSecret || !wpBaseUrl) {
+        return res.status(500).json({ error: 'Integrazione WordPress non configurata' });
+    }
+
+    const token = jwt.sign(
+        { scope: 'wp-root-access', jti: randomUUID() },
+        wpSecret,
+        { expiresIn: '90s' }
+    );
+
+    res.json({ url: `${wpBaseUrl.replace(/\/$/, '')}/root/sso?token=${token}` });
 };
 
 // ── Interno: email destinatari notifiche (solo admin della società) ──────────

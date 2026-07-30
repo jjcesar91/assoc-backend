@@ -19,6 +19,7 @@ router.get('/me', authenticateToken, authController.me);
 router.put('/me', authenticateToken, authController.updateProfile);
 router.post('/switch-societa', authenticateToken, authController.switchSocieta);
 router.put('/password', authenticateToken, authController.updatePassword);
+router.get('/wp-root-token', authenticateToken, authController.getWpRootAccessToken);
 
 // Admin – gestione utenti (solo role=admin)
 router.get('/admin/users', authenticateToken, requireAdmin, authController.adminListUsers);

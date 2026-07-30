@@ -72,6 +72,8 @@ services:
       - JWT_SECRET=super_secret_key_change_me
       - JWT_REFRESH_SECRET=super_secret_refresh_key_change_me
       - INTERNAL_API_SECRET=internal_secret_change_me
+      - WP_SSO_SECRET=wp_sso_secret_change_me
+      - WP_BASE_URL=https://dominio.com
     ports:
       - "3002:3000"
       - "9230:9229"
