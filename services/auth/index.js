@@ -37,6 +37,10 @@ async function start({ retries = 15, delayMs = 3000 } = {}) {
         DO $$
         DECLARE obj RECORD;
         BEGIN
+          -- Tabella non ancora creata (prima sync su DB nuovo): niente da ripulire.
+          IF to_regclass('public."Users"') IS NULL THEN
+            RETURN;
+          END IF;
           -- I vecchi vincoli globali su email sono UNIQUE constraint: vanno rilasciati
           -- come constraint (questo elimina anche l'indice sottostante).
           FOR obj IN

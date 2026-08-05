@@ -17,7 +17,7 @@ npm install --no-audit --no-fund
 echo "[entrypoint] Baseline + migrazioni database..."
 MAX_RETRIES=10
 i=0
-until node scripts/baseline-migrations.js && npx sequelize-cli db:migrate; do
+until node scripts/sync-db.js && node scripts/baseline-migrations.js && npx sequelize-cli db:migrate; do
   i=$((i + 1))
   if [ "$i" -ge "$MAX_RETRIES" ]; then
     echo "[entrypoint] Migrazioni fallite dopo $MAX_RETRIES tentativi. Interrompo."
