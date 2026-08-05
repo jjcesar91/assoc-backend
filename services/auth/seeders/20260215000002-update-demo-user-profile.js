@@ -13,16 +13,17 @@ module.exports = {
     );
 
     if (users.length > 0) {
-        // Update existing user
+        // Update existing user. NB: non tocca mai la password di un utente già
+        // esistente (anche se questo seeder dovesse rieseguirsi per qualsiasi
+        // motivo) per non sovrascrivere una password che l'utente ha cambiato.
         return queryInterface.sequelize.query(
           `UPDATE "Users"
            SET
              role = 'superuser',
              "societaId" = NULL,
-             nome = 'DONATO', 
-             cognome = 'SALFI', 
-             telefono = '336382041',
-             password = '${hashedPassword}'
+             nome = 'DONATO',
+             cognome = 'SALFI',
+             telefono = '336382041'
            WHERE email = 'demo@example.com';`
         );
     } else {
