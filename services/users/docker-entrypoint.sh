@@ -1,11 +1,11 @@
 #!/bin/sh
 set -e
 
-echo "[entrypoint] Waiting for database and running migrations..."
+echo "[entrypoint] Waiting for database, syncing schema and running migrations..."
 
 MAX_RETRIES=10
 i=0
-until npx sequelize-cli db:migrate; do
+until node sync-db.js && node scripts/baseline-migrations.js && npx sequelize-cli db:migrate; do
   i=$((i + 1))
   if [ $i -ge $MAX_RETRIES ]; then
     echo "[entrypoint] Migration failed after $MAX_RETRIES attempts. Aborting."
