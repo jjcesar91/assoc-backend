@@ -82,11 +82,20 @@ jobs:
               fi
             fi
 
-            # Mostra i log delle migrazioni solo se users_ms e' stato ricostruito
+            # Mostra i log delle migrazioni solo se users_ms e' stato ricostruito.
+            # L'entrypoint va in retry-loop e infine abortisce (container Exited)
+            # se le migrazioni falliscono: verifichiamo esplicitamente che il
+            # container sia ancora in esecuzione, altrimenti falliamo il deploy
+            # invece di riportare successo con un servizio giu'.
             if [ "$REBUILD_USERS" = "true" ]; then
               echo "Waiting for users_ms to complete migrations..."
               sleep 20
               docker logs users_ms 2>&1 | grep -E "\[entrypoint\]|Migration" || true
+              if [ "$(docker inspect -f '{{.State.Running}}' users_ms 2>/dev/null)" != "true" ]; then
+                echo "ERRORE: users_ms non e' in esecuzione dopo il deploy (migrazioni fallite?)."
+                docker logs users_ms --tail 80
+                exit 1
+              fi
             fi
 
             # Idem per payments_ms (baseline + sequelize-cli db:migrate all'avvio)
@@ -94,6 +103,11 @@ jobs:
               echo "Waiting for payments_ms to complete migrations..."
               sleep 20
               docker logs payments_ms 2>&1 | grep -E "\[entrypoint\]|\[baseline\]|migrat" || true
+              if [ "$(docker inspect -f '{{.State.Running}}' payments_ms 2>/dev/null)" != "true" ]; then
+                echo "ERRORE: payments_ms non e' in esecuzione dopo il deploy (migrazioni fallite?)."
+                docker logs payments_ms --tail 80
+                exit 1
+              fi
             fi
 
             # activities_ms esegue al boot sync({alter:true}) + il backfill dei dati
