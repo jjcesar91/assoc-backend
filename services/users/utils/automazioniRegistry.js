@@ -147,7 +147,12 @@ function getAmbito(tipo) {
 // dall'API di configurazione sia dal job, per non duplicare la logica.
 function resolveConfig(tipo, saved, societa) {
   const def = getDefinizione(tipo);
-  const applicabile = !!def.applicabile(societa);
+  // Le automazioni di categoria 'ets_point' sono applicabili solo alle società
+  // che hanno attivato "Gestore ETS Point" in Anagrafica (opzione riservata ai
+  // superuser, disattivata di default): altrimenti la sezione non è visibile
+  // in UI e nessuna email di questo tipo deve poter partire dal job schedulato.
+  const applicabile = !!def.applicabile(societa)
+    && (def.categoria !== 'ets_point' || !!societa.gestore_ets_point);
   return {
     applicabile,
     attiva: saved ? saved.attiva : applicabile,
