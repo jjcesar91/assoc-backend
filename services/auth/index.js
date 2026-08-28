@@ -18,6 +18,12 @@ app.get('/swagger', (req, res) => {
 });
 
 // Routes
+// Le risposte delle API sono dinamiche: impedisce a un eventuale CDN/reverse-proxy
+// davanti al servizio di cachearle (visto su dev.etspoint.it: GET stale dopo un deploy).
+app.use('/api', (req, res, next) => {
+    res.set('Cache-Control', 'no-store');
+    next();
+});
 app.use('/api', routes);
 
 // Database connection and server start (with forced sync for new columns).
