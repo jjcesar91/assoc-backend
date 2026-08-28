@@ -185,20 +185,21 @@ class SocietaController {
             }
 
             // Explicitly allow the new fields update
-            const {    
-                denominazione, codice_fiscale, partita_iva, codice_sdi, pec, email, telefono, 
-                indirizzo, comune, cap, cognome_rappr_legale, nome_rappr_legale, 
+            const {
+                denominazione, codice_fiscale, partita_iva, codice_sdi, pec, email, telefono,
+                indirizzo, comune, cap, cognome_rappr_legale, nome_rappr_legale,
                 alias_sms, alias_email, affiliazioni,
                 tipo_anno_associativo, data_inizio_anno_associativo,
                 footer_text, email_text, receipt_footer_text, // Added template fields
                 quota_tesseramento_unico,  // Impostazione quota+tesseramento unico
                 tipo_associazione,  // ASD o APS
+                gestore_ets_point,  // Attiva sezione ETS Point in Automazioni (solo superuser)
                 // Comunicazioni ordini
                 com_proforma_stato, com_proforma_oggetto, com_proforma_testo, com_proforma_ccn,
                 com_pagamento_stato, com_pagamento_oggetto, com_pagamento_testo, com_pagamento_ccn
             } = req.body;
 
-            await societa.update({
+            const updatePayload = {
                 denominazione, codice_fiscale, partita_iva, codice_sdi, pec, email, telefono,
                 indirizzo, comune, cap, cognome_rappr_legale, nome_rappr_legale,
                 alias_sms, alias_email,
@@ -209,7 +210,15 @@ class SocietaController {
                 // Comunicazioni ordini
                 com_proforma_stato, com_proforma_oggetto, com_proforma_testo, com_proforma_ccn,
                 com_pagamento_stato, com_pagamento_oggetto, com_pagamento_testo, com_pagamento_ccn
-            }, { transaction });
+            };
+
+            // gestore_ets_point è visibile e modificabile solo da un superuser:
+            // un utente non superuser non può alterarlo nemmeno chiamando l'API direttamente.
+            if (req.user?.role === 'superuser' && gestore_ets_point !== undefined) {
+                updatePayload.gestore_ets_point = gestore_ets_point;
+            }
+
+            await societa.update(updatePayload, { transaction });
 
             if (affiliazioni && Array.isArray(affiliazioni)) {
                 // Delete existing

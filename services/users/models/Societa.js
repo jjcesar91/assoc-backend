@@ -125,6 +125,13 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: false,
       defaultValue: false
     },
+    // Attiva la sezione "ETS Point" nelle Automazioni. Impostabile solo da un
+    // superuser (vedi societaController.updateSocieta): disattivata di default.
+    gestore_ets_point: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false
+    },
     tipo_associazione: {
       type: DataTypes.STRING,
       allowNull: false,
