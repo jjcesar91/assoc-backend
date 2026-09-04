@@ -46,6 +46,13 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.BOOLEAN,
         defaultValue: false
     },
+    // Sottogruppo di bilancio (id di un Gruppo nel servizio payments) a cui
+    // vengono associate le ricevute di questo prodotto in prima nota/bilancio,
+    // in alternativa alla mappatura di default per tipo prodotto (generic).
+    gruppoId: {
+        type: DataTypes.INTEGER,
+        allowNull: true
+    },
     // Specific fields
     periodicity: DataTypes.STRING, // periodic_quota
     duration: DataTypes.STRING, // subscription

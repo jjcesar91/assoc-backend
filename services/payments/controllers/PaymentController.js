@@ -1,4 +1,4 @@
-const { Payment } = require('../models');
+const { Payment, sequelize } = require('../models');
 const { Op } = require('sequelize');
 
 // Restituisce la data di inizio dell'anno associativo corrente (come stringa YYYY-MM-DD)
@@ -237,6 +237,63 @@ exports.create = async (req, res) => {
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Failed to create payment' });
+    }
+};
+
+// Trasferimento tra due conti della stessa società: crea in un'unica transazione
+// una riga di uscita sul conto di origine e una di entrata sul conto di
+// destinazione, entrambe con modalita_pagamento 'Giroconto'. Questo valore non è
+// un'opzione selezionabile in anagrafica Conti: è usato solo per marcare le
+// righe di prima nota generate da questo endpoint e per escluderle dal bilancio.
+exports.giroconto = async (req, res) => {
+    try {
+        const { societa_id, data_pagamento, importo, conto_uscita, conto_entrata, note } = req.body;
+
+        if (!societa_id) return res.status(400).json({ error: 'societa_id obbligatorio' });
+        if (!conto_uscita || !conto_entrata) {
+            return res.status(400).json({ error: 'Seleziona conto di uscita e conto di entrata.' });
+        }
+        if (conto_uscita === conto_entrata) {
+            return res.status(400).json({ error: 'Il conto di uscita e il conto di entrata devono essere diversi.' });
+        }
+        const importoAbs = Math.abs(parseFloat(importo));
+        if (!importoAbs || isNaN(importoAbs)) {
+            return res.status(400).json({ error: 'Inserisci un importo valido.' });
+        }
+        if (!data_pagamento) return res.status(400).json({ error: 'data_pagamento obbligatoria' });
+
+        const common = {
+            societa_id,
+            data_pagamento,
+            modalita_pagamento: 'Giroconto',
+            quote_types: 'giroconto',
+            stato_pagamento: '1. VALIDO CON RICEVUTA',
+            note: note || null,
+            gruppo_id: null,
+        };
+
+        const result = await sequelize.transaction(async (t) => {
+            const uscita = await Payment.create({
+                ...common,
+                importo: -importoAbs,
+                quote: `Giroconto verso ${conto_entrata}`,
+                conto_destinazione: conto_uscita,
+            }, { transaction: t });
+
+            const entrata = await Payment.create({
+                ...common,
+                importo: importoAbs,
+                quote: `Giroconto da ${conto_uscita}`,
+                conto_destinazione: conto_entrata,
+            }, { transaction: t });
+
+            return { uscita, entrata };
+        });
+
+        res.status(201).json(result);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to create giroconto' });
     }
 };
 

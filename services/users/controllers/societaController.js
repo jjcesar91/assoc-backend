@@ -125,7 +125,7 @@ class SocietaController {
                      },
                      body: JSON.stringify({
                          descrizione: 'CASSA',
-                         modalita_pagamento: 'Contanti',
+                         modalita_pagamento: ['Contanti'],
                          societa_id: societa.id
                      })
                  });
