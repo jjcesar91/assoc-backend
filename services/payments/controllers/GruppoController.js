@@ -79,6 +79,17 @@ const APS_SOTTOGRUPPI = [
   { parentCodice: 'EE', descrizione: 'Altre entrate di supporto generale',   tipo: 'Entrata', sezione: 'E', numero: 2, codice: 'EE2' },
 ];
 
+// Configurazione di default delle voci di pagamento (Configurazione → Contabilità)
+// per le nuove società APS: associa ogni tipo prodotto al sottogruppo APS
+// corrispondente. Applicata solo in fase di creazione (vedi initAps sotto):
+// le società APS già esistenti non vengono toccate. "Generico" resta senza
+// sottogruppo di default (nessuna voce corrispondente per APS).
+const APS_VOCI_CONFIG_DEFAULT = [
+  { quote_type: 'quota_associativa', codice: 'AE1' }, // Entrate da quote associative e apporti dei fondatori
+  { quote_type: 'tesseramento',      codice: 'AE3' }, // Entrate per prestazioni e cessioni ad associati e fondatori
+  { quote_type: 'subscription',      codice: 'AE3' }, // Entrate per prestazioni e cessioni ad associati e fondatori
+];
+
 // ---------------------------------------------------------------------------
 // Struttura default gruppi/sottogruppi per ASD
 // NB: gli ASD non usano le sezioni del Mod. D → sezione = null (Bilancio "flat")
@@ -327,6 +338,18 @@ exports.initAps = async (req, res) => {
                 });
                 created.push(record);
             }
+        }
+
+        // 3. Configurazione di default voce → sottogruppo (Configurazione → Contabilità).
+        // findOrCreate: se la società ha già una riga per quel quote_type (es. init-aps
+        // richiamato di nuovo, o configurazione impostata a mano) non viene sovrascritta.
+        for (const v of APS_VOCI_CONFIG_DEFAULT) {
+            const gruppo = await Gruppo.findOne({ where: { societa_id, codice: v.codice } });
+            if (!gruppo) continue;
+            await PaymentVoceConfig.findOrCreate({
+                where: { societa_id, quote_type: v.quote_type },
+                defaults: { societa_id, quote_type: v.quote_type, gruppo_id: gruppo.id },
+            });
         }
 
         res.status(201).json({ created: created.length });
