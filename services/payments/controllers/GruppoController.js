@@ -1,4 +1,4 @@
-const { Gruppo } = require('../models');
+const { Gruppo, PaymentVoceConfig } = require('../models');
 const { Op } = require('sequelize');
 
 // ---------------------------------------------------------------------------
@@ -79,6 +79,17 @@ const APS_SOTTOGRUPPI = [
   { parentCodice: 'EE', descrizione: 'Altre entrate di supporto generale',   tipo: 'Entrata', sezione: 'E', numero: 2, codice: 'EE2' },
 ];
 
+// Configurazione di default delle voci di pagamento (Configurazione → Contabilità)
+// per le nuove società APS: associa ogni tipo prodotto al sottogruppo APS
+// corrispondente. Applicata solo in fase di creazione (vedi initAps sotto):
+// le società APS già esistenti non vengono toccate. "Generico" resta senza
+// sottogruppo di default (nessuna voce corrispondente per APS).
+const APS_VOCI_CONFIG_DEFAULT = [
+  { quote_type: 'quota_associativa', codice: 'AE1' }, // Entrate da quote associative e apporti dei fondatori
+  { quote_type: 'tesseramento',      codice: 'AE3' }, // Entrate per prestazioni e cessioni ad associati e fondatori
+  { quote_type: 'subscription',      codice: 'AE3' }, // Entrate per prestazioni e cessioni ad associati e fondatori
+];
+
 // ---------------------------------------------------------------------------
 // Struttura default gruppi/sottogruppi per ASD
 // NB: gli ASD non usano le sezioni del Mod. D → sezione = null (Bilancio "flat")
@@ -123,6 +134,17 @@ const ASD_SOTTOGRUPPI = [
   { parentCodice: 'U', descrizione: 'F24 ed altri tributi',                   tipo: 'Uscita',  sezione: null, numero: 16, codice: 'U16' },
   { parentCodice: 'U', descrizione: 'Donazioni/Erogazioni liberali',          tipo: 'Uscita',  sezione: null, numero: 17, codice: 'U17' },
   { parentCodice: 'U', descrizione: 'Restituzione prestito soci',             tipo: 'Uscita',  sezione: null, numero: 18, codice: 'U18' },
+];
+
+// Configurazione di default delle voci di pagamento (Configurazione → Contabilità)
+// per le nuove società ASD: associa ogni tipo prodotto al sottogruppo ASD
+// corrispondente. Applicata solo in fase di creazione (vedi initAsd sotto):
+// le società ASD già esistenti non vengono toccate.
+const ASD_VOCI_CONFIG_DEFAULT = [
+  { quote_type: 'quota_associativa', codice: 'E1' },  // Quote associative
+  { quote_type: 'tesseramento',      codice: 'E2' },  // Tesseramenti
+  { quote_type: 'subscription',      codice: 'E3' },  // Quote corsi/attività istituzionali
+  { quote_type: 'generic',           codice: 'U1' },  // Affiliazioni/Tesseramenti
 ];
 
 exports.getBySocieta = async (req, res) => {
@@ -189,6 +211,18 @@ exports.initAsd = async (req, res) => {
                 });
                 created.push(record);
             }
+        }
+
+        // 3. Configurazione di default voce → sottogruppo (Configurazione → Contabilità).
+        // findOrCreate: se la società ha già una riga per quel quote_type (es. init-asd
+        // richiamato di nuovo, o configurazione impostata a mano) non viene sovrascritta.
+        for (const v of ASD_VOCI_CONFIG_DEFAULT) {
+            const gruppo = await Gruppo.findOne({ where: { societa_id, codice: v.codice } });
+            if (!gruppo) continue;
+            await PaymentVoceConfig.findOrCreate({
+                where: { societa_id, quote_type: v.quote_type },
+                defaults: { societa_id, quote_type: v.quote_type, gruppo_id: gruppo.id },
+            });
         }
 
         res.status(201).json({ created: created.length });
@@ -304,6 +338,18 @@ exports.initAps = async (req, res) => {
                 });
                 created.push(record);
             }
+        }
+
+        // 3. Configurazione di default voce → sottogruppo (Configurazione → Contabilità).
+        // findOrCreate: se la società ha già una riga per quel quote_type (es. init-aps
+        // richiamato di nuovo, o configurazione impostata a mano) non viene sovrascritta.
+        for (const v of APS_VOCI_CONFIG_DEFAULT) {
+            const gruppo = await Gruppo.findOne({ where: { societa_id, codice: v.codice } });
+            if (!gruppo) continue;
+            await PaymentVoceConfig.findOrCreate({
+                where: { societa_id, quote_type: v.quote_type },
+                defaults: { societa_id, quote_type: v.quote_type, gruppo_id: gruppo.id },
+            });
         }
 
         res.status(201).json({ created: created.length });

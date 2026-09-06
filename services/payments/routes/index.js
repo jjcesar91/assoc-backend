@@ -114,6 +114,7 @@ router.get('/', PaymentController.getAll);
 router.post('/bulk', PaymentController.bulk);
 router.post('/import-voci', PaymentController.importVoci);
 router.post('/import-odoo-ordini', PaymentController.importOdooOrdini);
+router.post('/giroconto', PaymentController.giroconto);
 router.post('/', PaymentController.create);
 router.put('/:id', PaymentController.update);
 router.delete('/:id/proforma', PaymentController.deleteProforma);
