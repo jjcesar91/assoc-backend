@@ -81,7 +81,19 @@ exports.update = async (req, res) => {
         // Il flag predefinito si imposta solo tramite l'endpoint dedicato,
         // che garantisce l'unicità del conto predefinito per società.
         const { predefinito, ...payload } = req.body;
-        await record.update(sanitize(payload));
+        const cleaned = sanitize(payload);
+        // Saldo iniziale e relativa data: se non sono mai stati impostati chiunque
+        // può valorizzarli; una volta impostati (data presente oppure importo
+        // diverso da zero) solo il superuser può modificarli. Per gli altri
+        // utenti si scartano le modifiche a questi campi, lasciando invariato il
+        // resto del payload.
+        const saldoGiaImpostato = record.saldo_iniziale_data != null
+            || (record.saldo_iniziale != null && Number(record.saldo_iniziale) !== 0);
+        if (saldoGiaImpostato && req.user?.role !== 'superuser') {
+            delete cleaned.saldo_iniziale;
+            delete cleaned.saldo_iniziale_data;
+        }
+        await record.update(cleaned);
         res.json(toPublicJson(record));
     } catch (error) {
         res.status(500).json({ error: error.message });
