@@ -204,6 +204,12 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.DATEONLY,
       allowNull: true
     },
+    // Sovrascrittura manuale della Data Tesseramento mostrata nel modal socio: se valorizzata,
+    // ha priorità sulla data calcolata dal pagamento tesseramento più recente.
+    data_tesseramento_manuale: {
+      type: DataTypes.DATEONLY,
+      allowNull: true
+    },
     id_badge: {
       type: DataTypes.STRING,
       allowNull: true
