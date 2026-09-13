@@ -1,0 +1,135 @@
+name: Deploy Backend (dev)
+
+on:
+  push:
+    branches: [dev]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            set -e
+            cd ${{ secrets.DEPLOY_PATH }}
+
+            # Builda con il builder classico: le immagini cosi' generate includono
+            # il metadato "ContainerConfig" richiesto da docker-compose v1, evitando
+            # il bug "KeyError: 'ContainerConfig'" durante la ricreazione dei container.
+            export DOCKER_BUILDKIT=0
+            export COMPOSE_DOCKER_CLI_BUILD=0
+            # Nome progetto esplicito (invece di lasciarlo implicito al nome della
+            # cartella "docker"): isola rete/volumi dallo stack prod (backend_prod),
+            # che vive in un checkout separato sullo stesso host.
+            export COMPOSE_PROJECT_NAME=docker
+
+            BEFORE=$(git rev-parse HEAD)
+            git pull origin dev
+            AFTER=$(git rev-parse HEAD)
+
+            if [ "$BEFORE" = "$AFTER" ]; then
+              echo "Nessuna modifica rilevata: nessun rebuild necessario."
+              exit 0
+            fi
+
+            CHANGED=$(git diff --name-only "$BEFORE" "$AFTER")
+            echo "File modificati:"
+            echo "$CHANGED"
+
+            cd docker
+
+            REBUILD_USERS=false
+            REBUILD_PAYMENTS=false
+            REBUILD_ACTIVITIES=false
+
+            # Ricreazione robusta al bug di docker-compose v1 "KeyError: 'ContainerConfig'":
+            # si rimuovono i container prima di ricrearli, cosi' compose non tenta di
+            # ereditare i volumi dal vecchio container (i volumi named persistono comunque).
+            # $@ = elenco servizi (vuoto = tutti). --no-deps e' innocuo quando $@ e' vuoto.
+            recreate() {
+              docker-compose build "$@"
+              docker-compose rm -sf "$@" || true
+              docker-compose up -d --no-deps "$@"
+            }
+
+            # Modifiche all'infrastruttura docker (compose, nginx.conf, ...) => rebuild completo
+            if echo "$CHANGED" | grep -qE '^docker/'; then
+              echo "Modifiche all'infrastruttura docker: rebuild completo."
+              recreate
+              docker-compose restart nginx || true
+              REBUILD_USERS=true
+              REBUILD_PAYMENTS=true
+              REBUILD_ACTIVITIES=true
+            else
+              # Mappa i path services/<nome>/... sul relativo servizio compose <nome>_ms
+              SERVICES=$(echo "$CHANGED" | sed -n 's#^services/\([^/]*\)/.*#\1_ms#p' | sort -u)
+              if [ -z "$SERVICES" ]; then
+                echo "Nessun microservizio toccato: nessun rebuild necessario."
+                exit 0
+              fi
+              echo "Microservizi da ricostruire: $SERVICES"
+              recreate $SERVICES
+              if echo "$SERVICES" | grep -qw users_ms; then
+                REBUILD_USERS=true
+              fi
+              if echo "$SERVICES" | grep -qw payments_ms; then
+                REBUILD_PAYMENTS=true
+              fi
+              if echo "$SERVICES" | grep -qw activities_ms; then
+                REBUILD_ACTIVITIES=true
+              fi
+            fi
+
+            # Mostra i log delle migrazioni solo se users_ms e' stato ricostruito.
+            # L'entrypoint va in retry-loop e infine abortisce (container Exited)
+            # se le migrazioni falliscono: verifichiamo esplicitamente che il
+            # container sia ancora in esecuzione, altrimenti falliamo il deploy
+            # invece di riportare successo con un servizio giu'.
+            if [ "$REBUILD_USERS" = "true" ]; then
+              echo "Waiting for users_ms to complete migrations..."
+              sleep 20
+              docker logs users_ms 2>&1 | grep -E "\[entrypoint\]|Migration" || true
+              if [ "$(docker inspect -f '{{.State.Running}}' users_ms 2>/dev/null)" != "true" ]; then
+                echo "ERRORE: users_ms non e' in esecuzione dopo il deploy (migrazioni fallite?)."
+                docker logs users_ms --tail 80
+                exit 1
+              fi
+            fi
+
+            # Idem per payments_ms (baseline + sequelize-cli db:migrate all'avvio)
+            if [ "$REBUILD_PAYMENTS" = "true" ]; then
+              echo "Waiting for payments_ms to complete migrations..."
+              sleep 20
+              docker logs payments_ms 2>&1 | grep -E "\[entrypoint\]|\[baseline\]|migrat" || true
+              if [ "$(docker inspect -f '{{.State.Running}}' payments_ms 2>/dev/null)" != "true" ]; then
+                echo "ERRORE: payments_ms non e' in esecuzione dopo il deploy (migrazioni fallite?)."
+                docker logs payments_ms --tail 80
+                exit 1
+              fi
+            fi
+
+            # activities_ms esegue al boot sync({alter:true}) + il backfill dei dati
+            # (es. CorsoOrari per i corsi con un solo giorno). Il backfill non blocca
+            # l'avvio del servizio, quindi qui verifichiamo esplicitamente l'esito.
+            if [ "$REBUILD_ACTIVITIES" = "true" ]; then
+              echo "Waiting for activities_ms to complete migrations..."
+              sleep 20
+              ACTIVITIES_LOGS=$(docker logs activities_ms 2>&1 | grep -E "synced successfully|Backfill|fallito" || true)
+              echo "$ACTIVITIES_LOGS"
+              if echo "$ACTIVITIES_LOGS" | grep -q "fallito"; then
+                echo "ERRORE: il backfill di activities_ms e' fallito."
+                exit 1
+              fi
+              if ! echo "$ACTIVITIES_LOGS" | grep -q "synced successfully"; then
+                echo "ERRORE: activities_ms non ha completato la sincronizzazione del database."
+                exit 1
+              fi
+            fi
+
+            echo "Deploy completed."
