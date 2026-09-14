@@ -365,11 +365,15 @@ exports.getNextNumero = async (req, res) => {
 
         // Data dell'ultimo ordine dell'anno selezionato: usata dal frontend come
         // limite inferiore selezionabile per la data documento. annoEndStr è
-        // esclusivo (inizio del periodo successivo).
+        // esclusivo (inizio del periodo successivo). Le ricevute annullate
+        // (stato_pagamento che inizia con '3.') vengono ignorate, così che se
+        // l'ultima ricevuta dell'anno risulta annullata si consideri quella
+        // valida precedente.
         const lastPayment = await Payment.findOne({
             where: {
                 societa_id,
                 data_pagamento: { [Op.gte]: annoStartStr, [Op.lt]: annoEndStr },
+                stato_pagamento: { [Op.notLike]: '3.%' },
             },
             order: [['data_pagamento', 'DESC']],
             attributes: ['data_pagamento'],
