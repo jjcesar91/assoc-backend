@@ -176,6 +176,13 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.BOOLEAN,
       allowNull: false,
       defaultValue: false
+    },
+    // Modulo (servizio documents) usato per la compilazione pubblica della
+    // Ricevuta Telematica. Nessuna FK reale: Modulo vive in un altro DB/servizio.
+    // Se null, si usa il primo modulo della società come default.
+    ricevuta_telematica_modulo_id: {
+      type: DataTypes.INTEGER,
+      allowNull: true
     }
   }, {
     sequelize,

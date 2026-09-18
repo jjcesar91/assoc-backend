@@ -222,6 +222,71 @@ class SocioController {
         }
     }
 
+    // Get-or-create Socio — versione PUBBLICA (nessuna autenticazione), usata dalla
+    // pagina pubblica /ricevuta-telematica/:societaId: il socio inserisce da solo
+    // nome, cognome, codice fiscale, indirizzo, email, telefono; sesso/data_nascita/
+    // luogo_nascita sono dedotti dal CF lato client (utils/codiceFiscale.js) e
+    // arrivano già valorizzati, ma restano facoltativi qui: se la deduzione fallisce
+    // (CF non standard) restano null finché un operatore non completa la scheda.
+    // Validazione volutamente ridotta rispetto a createSocio/validateSocioData.
+    async getOrCreatePublicSocio(req, res) {
+        try {
+            const {
+                societa_id, nome, cognome, codice_fiscale, indirizzo, email, telefono,
+                sesso, data_nascita, luogo_nascita,
+            } = req.body;
+
+            if (!societa_id || !nome || !cognome || !codice_fiscale) {
+                return res.status(400).json({ error: 'Nome, cognome, codice fiscale e società sono obbligatori' });
+            }
+
+            const societa = await Societa.findByPk(societa_id);
+            if (!societa) {
+                return res.status(404).json({ error: 'Società non trovata' });
+            }
+
+            const cf = String(codice_fiscale).trim().toUpperCase();
+            const anagraficaData = {
+                nome: String(nome).trim(),
+                cognome: String(cognome).trim(),
+                indirizzo: indirizzo ? String(indirizzo).trim() : null,
+                email: email ? String(email).trim() : null,
+                telefono: telefono ? String(telefono).trim() : null,
+                // Dedotti dal codice fiscale lato client (utils/codiceFiscale.js): il
+                // socio può correggerli manualmente nel form prima di confermare.
+                sesso: sesso ? String(sesso).trim() : null,
+                data_nascita: data_nascita || null,
+                luogo_nascita: luogo_nascita ? String(luogo_nascita).trim() : null,
+            };
+
+            let socio = await Socio.findOne({ where: { codice_fiscale: cf, societa_id } });
+
+            if (socio) {
+                // Se la deduzione dal CF non è andata a buon fine (o il socio esiste già
+                // con questi dati completati da un operatore), non sovrascrivere con null.
+                if (!anagraficaData.sesso) delete anagraficaData.sesso;
+                if (!anagraficaData.data_nascita) delete anagraficaData.data_nascita;
+                if (!anagraficaData.luogo_nascita) delete anagraficaData.luogo_nascita;
+                await socio.update(anagraficaData);
+            } else {
+                socio = await Socio.create({
+                    societa_id,
+                    codice_fiscale: cf,
+                    tipo_socio: 'persona_fisica',
+                    ...anagraficaData,
+                });
+            }
+
+            return res.status(200).json(socio);
+        } catch (error) {
+            console.error('Error in getOrCreatePublicSocio:', error);
+            if (error.name === 'SequelizeUniqueConstraintError') {
+                return res.status(409).json({ error: 'Codice fiscale già presente in questa società.' });
+            }
+            return res.status(500).json({ error: error.message });
+        }
+    }
+
     // Get all Soci
     async getAllSoci(req, res) {
         try {
