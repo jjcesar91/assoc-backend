@@ -222,6 +222,35 @@ class SocioController {
         }
     }
 
+    // Verifica Socio esistente — versione PUBBLICA (nessuna autenticazione), sola
+    // lettura: usata dalla pagina pubblica /ricevuta-telematica/:societaId per il
+    // check in tempo reale appena il codice fiscale è completo, PRIMA della
+    // conferma (che è quella che effettivamente crea/aggiorna il socio via
+    // getOrCreatePublicSocio). Espone solo i campi che il form deve precompilare.
+    async lookupPublicSocio(req, res) {
+        try {
+            const { societa_id, codice_fiscale } = req.query;
+            if (!societa_id || !codice_fiscale) {
+                return res.status(400).json({ error: 'societa_id e codice_fiscale sono obbligatori' });
+            }
+
+            const cf = String(codice_fiscale).trim().toUpperCase();
+            const socio = await Socio.findOne({
+                where: { codice_fiscale: cf, societa_id },
+                attributes: ['nome', 'cognome', 'indirizzo', 'email', 'telefono', 'sesso', 'data_nascita', 'luogo_nascita'],
+            });
+
+            if (!socio) {
+                return res.status(200).json({ exists: false });
+            }
+
+            return res.status(200).json({ exists: true, socio });
+        } catch (error) {
+            console.error('Error in lookupPublicSocio:', error);
+            return res.status(500).json({ error: error.message });
+        }
+    }
+
     // Get-or-create Socio — versione PUBBLICA (nessuna autenticazione), usata dalla
     // pagina pubblica /ricevuta-telematica/:societaId: il socio inserisce da solo
     // nome, cognome, codice fiscale, indirizzo, email, telefono; sesso/data_nascita/

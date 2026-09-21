@@ -19,6 +19,7 @@ router.post('/internal/ricevuta-uploaded', requireInternal, InternalController.r
 // --- Rotte PUBBLICHE (senza autenticazione) — pagina /ricevuta-telematica/:societaId ---
 // Devono stare PRIMA di router.use(authenticateToken).
 router.get('/public/societa/:id', societaController.getSocietaPubblica);
+router.get('/public/soci', socioController.lookupPublicSocio);
 router.post('/public/soci', socioController.getOrCreatePublicSocio);
 
 router.use(authenticateToken);
