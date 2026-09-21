@@ -183,6 +183,14 @@ module.exports = (sequelize, DataTypes) => {
     ricevuta_telematica_modulo_id: {
       type: DataTypes.INTEGER,
       allowNull: true
+    },
+    // Prodotto (servizio products) usato per generare automaticamente una
+    // proforma quando il socio conferma i propri dati dalla Ricevuta Telematica.
+    // Nessuna FK reale: Product vive in un altro DB/servizio. Se null, nessuna
+    // proforma viene generata (a differenza del modulo, qui non c'è un default).
+    ricevuta_telematica_prodotto_id: {
+      type: DataTypes.INTEGER,
+      allowNull: true
     }
   }, {
     sequelize,

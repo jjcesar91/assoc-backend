@@ -31,6 +31,25 @@ exports.getAllProducts = async (req, res) => {
     }
 };
 
+// Versione PUBBLICA (nessuna autenticazione) di getProductById — usata dal
+// servizio payments (creazione proforma) e dalla pagina pubblica
+// /ricevuta-telematica/:societaId. Espone solo i campi necessari per calcolare
+// il prezzo e descrivere la voce, mai dati gestionali (gruppoId, ecc.).
+exports.getPublicProduct = async (req, res) => {
+    try {
+        const product = await Product.findByPk(req.params.id, {
+            attributes: ['id', 'societaId', 'type', 'description', 'basePrice', 'periodicity'],
+        });
+        if (product) {
+            res.status(200).json(product);
+        } else {
+            res.status(404).json({ error: 'Product not found' });
+        }
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
 exports.getProductById = async (req, res) => {
     try {
         const product = await Product.findByPk(req.params.id);

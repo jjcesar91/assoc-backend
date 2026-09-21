@@ -9,6 +9,7 @@ const VociConfigController = require('../controllers/VociConfigController');
 const FornitoreController = require('../controllers/FornitoreController');
 const RicevutaController = require('../controllers/RicevutaController');
 const SocioOrdineController = require('../controllers/SocioOrdineController');
+const RicevutaTelematicaController = require('../controllers/RicevutaTelematicaController');
 const authenticateToken = require('../middleware/auth');
 const requireInternal = require('../middleware/requireInternal');
 
@@ -70,6 +71,7 @@ router.get('/public/ricevuta/:token', RicevutaController.getStatus);
 router.get('/public/ricevuta/:token/file', RicevutaController.getFile);
 router.post('/public/ricevuta/:token', handleRicevutaUpload, RicevutaController.upload);
 router.put('/public/ricevuta/:token', handleRicevutaUpload, RicevutaController.reupload);
+router.post('/public/proforma-telematica', RicevutaTelematicaController.create);
 
 router.use(authenticateToken);
 
