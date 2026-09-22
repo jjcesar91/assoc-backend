@@ -198,7 +198,8 @@ class SocietaController {
                 com_proforma_stato, com_proforma_oggetto, com_proforma_testo, com_proforma_ccn,
                 com_pagamento_stato, com_pagamento_oggetto, com_pagamento_testo, com_pagamento_ccn,
                 ricevuta_telematica_modulo_id,   // Modulo attivo per la Ricevuta Telematica
-                ricevuta_telematica_prodotto_id  // Prodotto usato per generare la proforma automatica
+                ricevuta_telematica_prodotto_id, // Prodotto usato per generare la proforma automatica
+                ricevuta_telematica_conto_id     // Conto usato per confermare in blocco le proforme
             } = req.body;
 
             const updatePayload = {
@@ -219,6 +220,9 @@ class SocietaController {
             }
             if (ricevuta_telematica_prodotto_id !== undefined) {
                 updatePayload.ricevuta_telematica_prodotto_id = ricevuta_telematica_prodotto_id;
+            }
+            if (ricevuta_telematica_conto_id !== undefined) {
+                updatePayload.ricevuta_telematica_conto_id = ricevuta_telematica_conto_id;
             }
 
             // gestore_ets_point è visibile e modificabile solo da un superuser:

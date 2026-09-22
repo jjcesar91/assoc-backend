@@ -191,6 +191,13 @@ module.exports = (sequelize, DataTypes) => {
     ricevuta_telematica_prodotto_id: {
       type: DataTypes.INTEGER,
       allowNull: true
+    },
+    // Conto (servizio payments) usato come conto di incasso quando le proforme
+    // della Ricevuta Telematica vengono confermate in blocco. Nessuna FK reale:
+    // Conto vive in un altro DB/servizio.
+    ricevuta_telematica_conto_id: {
+      type: DataTypes.INTEGER,
+      allowNull: true
     }
   }, {
     sequelize,

@@ -40,6 +40,28 @@ function getAnnoEnd(tipo, dataInizio, targetAnno) {
     return new Date(start.getFullYear() + 1, mm - 1, dd).toISOString().split('T')[0];
 }
 
+// Come il ramo "oggi" di getAnnoStart, ma ancorato a una data di riferimento
+// qualsiasi invece che alla data corrente: restituisce l'anno di calendario in
+// cui inizia l'anno contabile a cui appartiene `dataRif`. Usato da
+// convertiProforma quando l'anno_ricevuta non è specificato esplicitamente, per
+// non assegnare per errore la ricevuta all'anno contabile "di oggi" quando si
+// registra in un secondo momento una proforma con data_pagamento passata
+// (es. conferma massiva delle proforme della Ricevuta Telematica).
+function deriveTargetAnnoDaData(dataRif, tipo, dataInizio) {
+    const d = new Date(dataRif);
+    let dd = 1, mm = 1;
+    if (tipo === 'associativo') {
+        dd = 1; mm = 9;
+    } else if (tipo === 'personalizzato' && dataInizio) {
+        const parts = dataInizio.split('-');
+        dd = parseInt(parts[0], 10);
+        mm = parseInt(parts[1], 10);
+    }
+    const year = d.getFullYear();
+    const startThisYear = new Date(year, mm - 1, dd);
+    return d >= startThisYear ? year : year - 1;
+}
+
 // Formatta il numero ricevuta secondo la convenzione:
 // - Anno solare:         N/ANNO        (es. 10/2026)
 // - Anno non solare:     N/ANNO1-AA2   (es. 10/2025-26)
@@ -155,6 +177,15 @@ exports.getAll = async (req, res) => {
                     )
                 );
             }
+        }
+        if (req.query.tipo_documento) {
+            where.tipo_documento = req.query.tipo_documento;
+        }
+        if (req.query.origine) {
+            where.origine = req.query.origine;
+        }
+        if (req.query.etichetta) {
+            where.etichette = { [Op.iLike]: `%${req.query.etichetta}%` };
         }
         const payments = await Payment.findAll({ where });
         res.json(payments);
@@ -406,7 +437,7 @@ exports.bulk = async (req, res) => {
 exports.convertiProforma = async (req, res) => {
     try {
         const { id } = req.params;
-        const { anno_ricevuta, data_ricevuta, progressivo_iniziale } = req.body;
+        const { anno_ricevuta, data_ricevuta, progressivo_iniziale, conto_destinazione } = req.body;
 
         const payment = await Payment.findByPk(id);
         if (!payment) return res.status(404).json({ error: 'Payment not found' });
@@ -414,9 +445,16 @@ exports.convertiProforma = async (req, res) => {
             return res.status(400).json({ error: 'Il pagamento non è di tipo proforma' });
         }
 
-        const targetAnno = anno_ricevuta ? parseInt(anno_ricevuta, 10) : null;
         const { tipo, dataInizio } = await fetchSocietaTipo(payment.societa_id, req.headers['authorization']);
         const tipoEffettivo = tipo || 'solare';
+
+        // Se l'anno non è specificato esplicitamente (come nella conferma massiva
+        // delle proforme della Ricevuta Telematica), lo si deduce dalla data di
+        // pagamento della proforma stessa — MAI da "oggi", altrimenti una proforma
+        // con data passata verrebbe assegnata all'anno contabile sbagliato.
+        const targetAnno = anno_ricevuta
+            ? parseInt(anno_ricevuta, 10)
+            : deriveTargetAnnoDaData(payment.data_pagamento || new Date(), tipoEffettivo, dataInizio);
 
         const annoStartStr = getAnnoStart(tipoEffettivo, dataInizio, targetAnno);
         const annoEndStr = getAnnoEnd(tipoEffettivo, dataInizio, targetAnno);
@@ -437,14 +475,21 @@ exports.convertiProforma = async (req, res) => {
         const dataRicevutaEff = data_ricevuta || payment.data_pagamento;
         const numero_ricevuta = formatNumeroRicevuta(nextProgressivo, tipoEffettivo, dataInizio, dataRicevutaEff);
 
-        await payment.update({
+        const updatePayload = {
             tipo_documento: 'pagamento',
             emetti_ricevuta: 'SI',
             progressivo_stagione: nextProgressivo,
             numero_ricevuta,
             data_ricevuta: dataRicevutaEff,
             modificato_da: req.user?.username || null,
-        });
+        };
+        // Usato dalla conferma massiva delle proforme della Ricevuta Telematica,
+        // che non passa da un conto scelto manualmente in un form.
+        if (conto_destinazione) {
+            updatePayload.conto_destinazione = conto_destinazione;
+        }
+
+        await payment.update(updatePayload);
 
         const updated = await Payment.findByPk(id);
         res.json(updated);

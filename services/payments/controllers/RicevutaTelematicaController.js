@@ -5,14 +5,34 @@ const { Payment } = require('../models');
 //
 // Invarianti (stesso principio di SocioOrdineController.createOrdine):
 //   - è sempre una PROFORMA: diventa ricevuta solo quando un operatore di
-//     backoffice la registra (PATCH /:id/converti-proforma);
-//   - origine = 'cliente';
+//     backoffice la registra (PATCH /:id/converti-proforma), qui in blocco
+//     dalla pagina "Ricevute Telematiche > Invio Ricevute";
+//   - origine = 'cliente' (stesso valore delle altre proforme self-service,
+//     per non alterare badge/viste esistenti — es. "DA CLIENTE" in Ricevute.jsx);
+//   - marcata con l'etichetta ETICHETTA_RICEVUTA_TELEMATICA, unico modo per
+//     distinguerla dalle altre proforme 'cliente' (es. area soci) nella lista
+//     "Invio Ricevute", che filtra su questa etichetta;
 //   - il prezzo non è mai accettato dal client: viene sempre ricalcolato qui
 //     interrogando il servizio prodotti per il prodotto configurato in
 //     Ricevute Telematiche (Societa.ricevuta_telematica_prodotto_id).
 
+const ETICHETTA_RICEVUTA_TELEMATICA = 'Ricevuta Telematica';
+
 function productsUrl() {
     return process.env.PRODUCTS_SERVICE_URL || 'http://products_ms:3000';
+}
+
+// Aggiunge un'etichetta alla stringa comma-separated se non già presente
+// (stesso helper di RicevutaController.js, duplicato perché non esportato lì).
+function addEtichetta(etichetteStr, nuova) {
+    const list = (etichetteStr || '')
+        .split(',')
+        .map(s => s.trim())
+        .filter(Boolean);
+    if (!list.some(e => e.toLowerCase() === nuova.toLowerCase())) {
+        list.push(nuova);
+    }
+    return list.join(',');
 }
 
 async function fetchProdottoPubblico(id) {
@@ -70,6 +90,7 @@ module.exports = {
                 // Sempre proforma: la registrazione resta un atto del backoffice.
                 tipo_documento: 'proforma',
                 origine: 'cliente',
+                etichette: addEtichetta(null, ETICHETTA_RICEVUTA_TELEMATICA),
                 utente_nome: nominativo || 'RICEVUTA TELEMATICA',
             });
 
