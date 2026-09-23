@@ -237,7 +237,7 @@ class SocioController {
             const cf = String(codice_fiscale).trim().toUpperCase();
             const socio = await Socio.findOne({
                 where: { codice_fiscale: cf, societa_id },
-                attributes: ['nome', 'cognome', 'indirizzo', 'email', 'telefono', 'sesso', 'data_nascita', 'luogo_nascita'],
+                attributes: ['nome', 'cognome', 'indirizzo', 'comune', 'cap', 'email', 'telefono', 'sesso', 'data_nascita', 'luogo_nascita'],
             });
 
             if (!socio) {
@@ -261,7 +261,7 @@ class SocioController {
     async getOrCreatePublicSocio(req, res) {
         try {
             const {
-                societa_id, nome, cognome, codice_fiscale, indirizzo, email, telefono,
+                societa_id, nome, cognome, codice_fiscale, indirizzo, comune, cap, email, telefono,
                 sesso, data_nascita, luogo_nascita,
             } = req.body;
 
@@ -279,6 +279,8 @@ class SocioController {
                 nome: String(nome).trim(),
                 cognome: String(cognome).trim(),
                 indirizzo: indirizzo ? String(indirizzo).trim() : null,
+                comune: comune ? String(comune).trim() : null,
+                cap: cap ? String(cap).trim() : null,
                 email: email ? String(email).trim() : null,
                 telefono: telefono ? String(telefono).trim() : null,
                 // Dedotti dal codice fiscale lato client (utils/codiceFiscale.js): il
