@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const societaController = require('../controllers/societaController');
+const certificatoController = require('../controllers/certificatoController');
 const authenticateToken = require('../middleware/auth');
 const multer = require('multer');
 const path = require('path');
@@ -32,5 +33,7 @@ router.post('/', societaController.createSocieta);
 router.get('/:id', societaController.getSocietaById);
 router.put('/:id', societaController.updateSocieta);
 router.post('/:id/logo', upload.single('logo'), societaController.uploadLogo);
+router.get('/:id/certificato', certificatoController.getCertificato);
+router.post('/:id/certificato/rigenera', certificatoController.rigeneraCertificato);
 
 module.exports = router;

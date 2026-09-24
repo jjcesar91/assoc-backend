@@ -198,6 +198,13 @@ module.exports = (sequelize, DataTypes) => {
     ricevuta_telematica_conto_id: {
       type: DataTypes.INTEGER,
       allowNull: true
+    },
+    // Secret del "certificato" installato come cookie sul browser del cliente per
+    // poter accedere alla pagina pubblica Ricevuta Telematica (vedi certificatoController.js).
+    // Non va mai esposto nelle risposte pubbliche.
+    ricevuta_telematica_certificato_secret: {
+      type: DataTypes.STRING,
+      allowNull: true
     }
   }, {
     sequelize,

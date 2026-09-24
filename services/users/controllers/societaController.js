@@ -1,5 +1,6 @@
 const { Op } = require('sequelize');
 const { Societa, SocietaAffiliazioni } = require('../models');
+const { cookieName, certificatoValido } = require('../utils/rtCertificato');
 
 const getUserScope = (req) => {
     const role = req.user?.role || 'user';
@@ -269,6 +270,9 @@ class SocietaController {
     // Get Societa by ID — versione PUBBLICA (nessuna autenticazione), usata dalla
     // pagina pubblica /ricevuta-telematica/:societaId. Espone solo i campi
     // necessari per l'intestazione e il form: mai credenziali SMTP o dati sensibili.
+    // Bloccata (403) se il browser non ha installato il certificato di questa
+    // società (vedi utils/rtCertificato.js): impedisce l'apertura della pagina a
+    // chi conosce solo il link.
     async getSocietaPubblica(req, res) {
         try {
             const { id } = req.params;
@@ -276,7 +280,8 @@ class SocietaController {
                 attributes: [
                     'id', 'denominazione', 'indirizzo', 'comune', 'cap',
                     'codice_fiscale', 'partita_iva', 'logo_path', 'footer_text',
-                    'ricevuta_telematica_modulo_id', 'ricevuta_telematica_prodotto_id'
+                    'ricevuta_telematica_modulo_id', 'ricevuta_telematica_prodotto_id',
+                    'ricevuta_telematica_certificato_secret'
                 ]
             });
 
@@ -284,7 +289,13 @@ class SocietaController {
                 return res.status(404).json({ message: 'Societa not found' });
             }
 
-            return res.status(200).json(societa);
+            const cookieToken = req.cookies?.[cookieName(id)];
+            if (!certificatoValido(societa, cookieToken)) {
+                return res.status(403).json({ message: 'Certificato non valido o non installato su questo browser' });
+            }
+
+            const { ricevuta_telematica_certificato_secret, ...pubblica } = societa.get({ plain: true });
+            return res.status(200).json(pubblica);
         } catch (error) {
             console.error('Error fetching societa (pubblica):', error);
             return res.status(500).json({ error: error.message });

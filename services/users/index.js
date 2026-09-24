@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const cookieParser = require('cookie-parser');
 const cron = require('node-cron');
 const db = require('./models');
 const routes = require('./routes');
@@ -11,6 +12,9 @@ const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors());
+// Legge il cookie-certificato della pagina pubblica Ricevuta Telematica (vedi
+// utils/rtCertificato.js e controllers/certificatoController.js).
+app.use(cookieParser());
 // Limite ampio per i body: le comunicazioni includono la ricevuta PDF in base64
 // (allegato), che supera facilmente il default di 100kb di express.json.
 app.use(express.json({ limit: '25mb' }));

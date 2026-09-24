@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { Op } = require('sequelize');
 const { sendEmail } = require('../utils/mailService');
+const { cookieName, certificatoValido } = require('../utils/rtCertificato');
 
 // Helper to calculate fiscal year
 function calculateAnnoContabile(date, societa) {
@@ -234,6 +235,14 @@ class SocioController {
                 return res.status(400).json({ error: 'societa_id e codice_fiscale sono obbligatori' });
             }
 
+            const societa = await Societa.findByPk(societa_id, {
+                attributes: ['id', 'ricevuta_telematica_certificato_secret'],
+            });
+            const cookieToken = req.cookies?.[cookieName(societa_id)];
+            if (!certificatoValido(societa, cookieToken)) {
+                return res.status(403).json({ message: 'Certificato non valido o non installato su questo browser' });
+            }
+
             const cf = String(codice_fiscale).trim().toUpperCase();
             const socio = await Socio.findOne({
                 where: { codice_fiscale: cf, societa_id },
@@ -272,6 +281,11 @@ class SocioController {
             const societa = await Societa.findByPk(societa_id);
             if (!societa) {
                 return res.status(404).json({ error: 'Società non trovata' });
+            }
+
+            const cookieToken = req.cookies?.[cookieName(societa_id)];
+            if (!certificatoValido(societa, cookieToken)) {
+                return res.status(403).json({ message: 'Certificato non valido o non installato su questo browser' });
             }
 
             const cf = String(codice_fiscale).trim().toUpperCase();
