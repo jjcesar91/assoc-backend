@@ -6,7 +6,7 @@ services:
     image: nginx:alpine
     restart: unless-stopped
     ports:
-      - "80:80"
+      - "1080:80"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf
     depends_on:
@@ -23,7 +23,7 @@ services:
   # --- Template Service ---
   template_ms:
     build: ../services/template
-    container_name: template_ms
+    container_name: template_ms_prod
     restart: unless-stopped
     environment:
       - PORT=3000
@@ -34,8 +34,8 @@ services:
       - SERVICE_NAME=template-service
       - JWT_SECRET=super_secret_key_change_me
     ports:
-      - "3001:3000" # Host:Container
-      - "9229:9229" # Debug port
+      - "4001:3000" # Host:Container
+      - "10229:9229" # Debug port
     depends_on:
       - template_db
     volumes:
@@ -47,14 +47,14 @@ services:
 
   template_db:
     image: postgres:13
-    container_name: template_db
+    container_name: template_db_prod
     restart: unless-stopped
     environment:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
       - POSTGRES_DB=template_db
     ports:
-      - "5432:5432" # Host:Container
+      - "6432:5432" # Host:Container
     volumes:
       - template_db_data:/var/lib/postgresql/data
     networks:
@@ -63,7 +63,7 @@ services:
   # --- Auth Service ---
   auth_ms:
     build: ../services/auth
-    container_name: auth_ms
+    container_name: auth_ms_prod
     restart: unless-stopped
     environment:
       - PORT=3000
@@ -78,8 +78,8 @@ services:
       - WP_SSO_SECRET=wp_sso_secret_change_me
       - WP_BASE_URL=https://dominio.com
     ports:
-      - "3002:3000"
-      - "9230:9229"
+      - "4002:3000"
+      - "10230:9229"
     depends_on:
       - auth_db
     volumes:
@@ -90,14 +90,14 @@ services:
 
   auth_db:
     image: postgres:13
-    container_name: auth_db
+    container_name: auth_db_prod
     restart: unless-stopped
     environment:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
       - POSTGRES_DB=auth_db
     ports:
-      - "5433:5432"
+      - "6433:5432"
     volumes:
       - auth_db_data:/var/lib/postgresql/data
     networks:
@@ -106,7 +106,7 @@ services:
   # --- Users Service ---
   users_ms:
     build: ../services/users
-    container_name: users_ms
+    container_name: users_ms_prod
     restart: unless-stopped
     environment:
       - PORT=3000
@@ -125,8 +125,8 @@ services:
       - SMTP_FROM_EMAIL=noreplysmtp@webassociazioni.it
       - SMTP_FROM_NAME=WebAssociazioni
     ports:
-      - "3003:3000"
-      - "9231:9229"
+      - "4003:3000"
+      - "10231:9229"
     depends_on:
       - users_db
     volumes:
@@ -138,14 +138,14 @@ services:
 
   users_db:
     image: postgres:13
-    container_name: users_db
+    container_name: users_db_prod
     restart: unless-stopped
     environment:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
       - POSTGRES_DB=users_db
     ports:
-      - "5434:5432"
+      - "6434:5432"
     volumes:
       - users_db_data:/var/lib/postgresql/data
     networks:
@@ -154,7 +154,7 @@ services:
   # --- Documents Service ---
   documents_ms:
     build: ../services/documents
-    container_name: documents_ms
+    container_name: documents_ms_prod
     restart: unless-stopped
     environment:
       - PORT=3000
@@ -165,8 +165,8 @@ services:
       - SERVICE_NAME=documents-service
       - JWT_SECRET=super_secret_key_change_me
     ports:
-      - "3004:3000"
-      - "9232:9229"
+      - "4004:3000"
+      - "10232:9229"
     depends_on:
       - documents_db
     volumes:
@@ -177,14 +177,14 @@ services:
 
   documents_db:
     image: postgres:13
-    container_name: documents_db
+    container_name: documents_db_prod
     restart: unless-stopped
     environment:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
       - POSTGRES_DB=documents_db
     ports:
-      - "5435:5432"
+      - "6435:5432"
     volumes:
       - documents_db_data:/var/lib/postgresql/data
     networks:
@@ -193,7 +193,7 @@ services:
   # --- Products Service ---
   products_ms:
     build: ../services/products
-    container_name: products_ms
+    container_name: products_ms_prod
     restart: unless-stopped
     environment:
       - PORT=3000
@@ -204,8 +204,8 @@ services:
       - SERVICE_NAME=products-service
       - JWT_SECRET=super_secret_key_change_me
     ports:
-      - "3005:3000"
-      - "9233:9229"
+      - "4005:3000"
+      - "10233:9229"
     depends_on:
       - products_db
     volumes:
@@ -216,14 +216,14 @@ services:
 
   products_db:
     image: postgres:13
-    container_name: products_db
+    container_name: products_db_prod
     restart: unless-stopped
     environment:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
       - POSTGRES_DB=products_db
     ports:
-      - "5436:5432"
+      - "6436:5432"
     volumes:
       - products_db_data:/var/lib/postgresql/data
     networks:
@@ -232,7 +232,7 @@ services:
   # --- Payments Service ---
   payments_ms:
     build: ../services/payments
-    container_name: payments_ms
+    container_name: payments_ms_prod
     restart: unless-stopped
     environment:
       - PORT=3000
@@ -246,8 +246,8 @@ services:
       - USERS_SERVICE_URL=http://users_ms:3000
       - PRODUCTS_SERVICE_URL=http://products_ms:3000
     ports:
-      - "3006:3000"
-      - "9234:9229"
+      - "4006:3000"
+      - "10234:9229"
     depends_on:
       - payments_db
     volumes:
@@ -259,14 +259,14 @@ services:
 
   payments_db:
     image: postgres:13
-    container_name: payments_db
+    container_name: payments_db_prod
     restart: unless-stopped
     environment:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
       - POSTGRES_DB=payments_db
     ports:
-      - "5437:5432"
+      - "6437:5432"
     volumes:
       - payments_db_data:/var/lib/postgresql/data
     networks:
@@ -275,7 +275,7 @@ services:
   # --- Activities Service ---
   activities_ms:
     build: ../services/activities
-    container_name: activities_ms
+    container_name: activities_ms_prod
     restart: unless-stopped
     environment:
       - PORT=3000
@@ -286,8 +286,8 @@ services:
       - SERVICE_NAME=activities-service
       - JWT_SECRET=super_secret_key_change_me
     ports:
-      - "3007:3000"
-      - "9235:9229"
+      - "4007:3000"
+      - "10235:9229"
     depends_on:
       - activities_db
     volumes:
@@ -298,14 +298,14 @@ services:
 
   activities_db:
     image: postgres:13
-    container_name: activities_db
+    container_name: activities_db_prod
     restart: unless-stopped
     environment:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
       - POSTGRES_DB=activities_db
     ports:
-      - "5438:5432"
+      - "6438:5432"
     volumes:
       - activities_db_data:/var/lib/postgresql/data
     networks:
