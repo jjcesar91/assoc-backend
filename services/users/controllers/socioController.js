@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { Op } = require('sequelize');
 const { sendEmail } = require('../utils/mailService');
+const { cookieName, certificatoValido } = require('../utils/rtCertificato');
 
 // Helper to calculate fiscal year
 function calculateAnnoContabile(date, societa) {
@@ -217,6 +218,115 @@ class SocioController {
             console.error('Error creating socio:', error);
             if (error.name === 'SequelizeUniqueConstraintError') {
                  return res.status(400).json({ error: 'Codice fiscale già presente in questa società.' });
+            }
+            return res.status(500).json({ error: error.message });
+        }
+    }
+
+    // Verifica Socio esistente — versione PUBBLICA (nessuna autenticazione), sola
+    // lettura: usata dalla pagina pubblica /ricevuta-telematica/:societaId per il
+    // check in tempo reale appena il codice fiscale è completo, PRIMA della
+    // conferma (che è quella che effettivamente crea/aggiorna il socio via
+    // getOrCreatePublicSocio). Espone solo i campi che il form deve precompilare.
+    async lookupPublicSocio(req, res) {
+        try {
+            const { societa_id, codice_fiscale } = req.query;
+            if (!societa_id || !codice_fiscale) {
+                return res.status(400).json({ error: 'societa_id e codice_fiscale sono obbligatori' });
+            }
+
+            const societa = await Societa.findByPk(societa_id, {
+                attributes: ['id', 'ricevuta_telematica_certificato_secret'],
+            });
+            const cookieToken = req.cookies?.[cookieName(societa_id)];
+            if (!certificatoValido(societa, cookieToken)) {
+                return res.status(403).json({ message: 'Certificato non valido o non installato su questo browser' });
+            }
+
+            const cf = String(codice_fiscale).trim().toUpperCase();
+            const socio = await Socio.findOne({
+                where: { codice_fiscale: cf, societa_id },
+                attributes: ['nome', 'cognome', 'indirizzo', 'comune', 'cap', 'email', 'telefono', 'sesso', 'data_nascita', 'luogo_nascita'],
+            });
+
+            if (!socio) {
+                return res.status(200).json({ exists: false });
+            }
+
+            return res.status(200).json({ exists: true, socio });
+        } catch (error) {
+            console.error('Error in lookupPublicSocio:', error);
+            return res.status(500).json({ error: error.message });
+        }
+    }
+
+    // Get-or-create Socio — versione PUBBLICA (nessuna autenticazione), usata dalla
+    // pagina pubblica /ricevuta-telematica/:societaId: il socio inserisce da solo
+    // nome, cognome, codice fiscale, indirizzo, email, telefono; sesso/data_nascita/
+    // luogo_nascita sono dedotti dal CF lato client (utils/codiceFiscale.js) e
+    // arrivano già valorizzati, ma restano facoltativi qui: se la deduzione fallisce
+    // (CF non standard) restano null finché un operatore non completa la scheda.
+    // Validazione volutamente ridotta rispetto a createSocio/validateSocioData.
+    async getOrCreatePublicSocio(req, res) {
+        try {
+            const {
+                societa_id, nome, cognome, codice_fiscale, indirizzo, comune, cap, email, telefono,
+                sesso, data_nascita, luogo_nascita,
+            } = req.body;
+
+            if (!societa_id || !nome || !cognome || !codice_fiscale) {
+                return res.status(400).json({ error: 'Nome, cognome, codice fiscale e società sono obbligatori' });
+            }
+
+            const societa = await Societa.findByPk(societa_id);
+            if (!societa) {
+                return res.status(404).json({ error: 'Società non trovata' });
+            }
+
+            const cookieToken = req.cookies?.[cookieName(societa_id)];
+            if (!certificatoValido(societa, cookieToken)) {
+                return res.status(403).json({ message: 'Certificato non valido o non installato su questo browser' });
+            }
+
+            const cf = String(codice_fiscale).trim().toUpperCase();
+            const anagraficaData = {
+                nome: String(nome).trim(),
+                cognome: String(cognome).trim(),
+                indirizzo: indirizzo ? String(indirizzo).trim() : null,
+                comune: comune ? String(comune).trim() : null,
+                cap: cap ? String(cap).trim() : null,
+                email: email ? String(email).trim() : null,
+                telefono: telefono ? String(telefono).trim() : null,
+                // Dedotti dal codice fiscale lato client (utils/codiceFiscale.js): il
+                // socio può correggerli manualmente nel form prima di confermare.
+                sesso: sesso ? String(sesso).trim() : null,
+                data_nascita: data_nascita || null,
+                luogo_nascita: luogo_nascita ? String(luogo_nascita).trim() : null,
+            };
+
+            let socio = await Socio.findOne({ where: { codice_fiscale: cf, societa_id } });
+
+            if (socio) {
+                // Se la deduzione dal CF non è andata a buon fine (o il socio esiste già
+                // con questi dati completati da un operatore), non sovrascrivere con null.
+                if (!anagraficaData.sesso) delete anagraficaData.sesso;
+                if (!anagraficaData.data_nascita) delete anagraficaData.data_nascita;
+                if (!anagraficaData.luogo_nascita) delete anagraficaData.luogo_nascita;
+                await socio.update(anagraficaData);
+            } else {
+                socio = await Socio.create({
+                    societa_id,
+                    codice_fiscale: cf,
+                    tipo_socio: 'persona_fisica',
+                    ...anagraficaData,
+                });
+            }
+
+            return res.status(200).json(socio);
+        } catch (error) {
+            console.error('Error in getOrCreatePublicSocio:', error);
+            if (error.name === 'SequelizeUniqueConstraintError') {
+                return res.status(409).json({ error: 'Codice fiscale già presente in questa società.' });
             }
             return res.status(500).json({ error: error.message });
         }

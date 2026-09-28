@@ -6,6 +6,9 @@ const automazioneRoutes = require('./automazioneRoutes');
 const authenticateToken = require('../middleware/auth');
 const requireInternal = require('../middleware/requireInternal');
 const InternalController = require('../controllers/internalController');
+const societaController = require('../controllers/societaController');
+const socioController = require('../controllers/socioController');
+const certificatoController = require('../controllers/certificatoController');
 
 router.get('/health', (req, res) => {
     res.json({ status: 'OK', service: process.env.SERVICE_NAME || 'users-service' });
@@ -13,6 +16,14 @@ router.get('/health', (req, res) => {
 
 // --- Rotte interne (service-to-service, protette da secret) — PRIMA dell'auth utente ---
 router.post('/internal/ricevuta-uploaded', requireInternal, InternalController.ricevutaUploaded);
+
+// --- Rotte PUBBLICHE (senza autenticazione) — pagina /ricevuta-telematica/:societaId ---
+// Devono stare PRIMA di router.use(authenticateToken).
+router.get('/public/societa/:id', societaController.getSocietaPubblica);
+router.get('/public/soci', socioController.lookupPublicSocio);
+router.post('/public/soci', socioController.getOrCreatePublicSocio);
+// Installa sul browser corrente il cookie-certificato (aperto dal file scaricato in Configurazione).
+router.get('/public/rt-certificato/installa', certificatoController.installaCertificato);
 
 router.use(authenticateToken);
 router.use('/soci', socioRoutes);

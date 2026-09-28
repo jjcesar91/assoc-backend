@@ -1,5 +1,6 @@
 const { Op } = require('sequelize');
 const { Societa, SocietaAffiliazioni } = require('../models');
+const { cookieName, certificatoValido } = require('../utils/rtCertificato');
 
 const getUserScope = (req) => {
     const role = req.user?.role || 'user';
@@ -196,7 +197,10 @@ class SocietaController {
                 gestore_ets_point,  // Attiva sezione ETS Point in Automazioni (solo superuser)
                 // Comunicazioni ordini
                 com_proforma_stato, com_proforma_oggetto, com_proforma_testo, com_proforma_ccn,
-                com_pagamento_stato, com_pagamento_oggetto, com_pagamento_testo, com_pagamento_ccn
+                com_pagamento_stato, com_pagamento_oggetto, com_pagamento_testo, com_pagamento_ccn,
+                ricevuta_telematica_modulo_id,   // Modulo attivo per la Ricevuta Telematica
+                ricevuta_telematica_prodotto_id, // Prodotto usato per generare la proforma automatica
+                ricevuta_telematica_conto_id     // Conto usato per confermare in blocco le proforme
             } = req.body;
 
             const updatePayload = {
@@ -211,6 +215,16 @@ class SocietaController {
                 com_proforma_stato, com_proforma_oggetto, com_proforma_testo, com_proforma_ccn,
                 com_pagamento_stato, com_pagamento_oggetto, com_pagamento_testo, com_pagamento_ccn
             };
+
+            if (ricevuta_telematica_modulo_id !== undefined) {
+                updatePayload.ricevuta_telematica_modulo_id = ricevuta_telematica_modulo_id;
+            }
+            if (ricevuta_telematica_prodotto_id !== undefined) {
+                updatePayload.ricevuta_telematica_prodotto_id = ricevuta_telematica_prodotto_id;
+            }
+            if (ricevuta_telematica_conto_id !== undefined) {
+                updatePayload.ricevuta_telematica_conto_id = ricevuta_telematica_conto_id;
+            }
 
             // gestore_ets_point è visibile e modificabile solo da un superuser:
             // un utente non superuser non può alterarlo nemmeno chiamando l'API direttamente.
@@ -249,6 +263,41 @@ class SocietaController {
         } catch (error) {
             if (transaction) await transaction.rollback();
             console.error('Error updating societa:', error);
+            return res.status(500).json({ error: error.message });
+        }
+    }
+
+    // Get Societa by ID — versione PUBBLICA (nessuna autenticazione), usata dalla
+    // pagina pubblica /ricevuta-telematica/:societaId. Espone solo i campi
+    // necessari per l'intestazione e il form: mai credenziali SMTP o dati sensibili.
+    // Bloccata (403) se il browser non ha installato il certificato di questa
+    // società (vedi utils/rtCertificato.js): impedisce l'apertura della pagina a
+    // chi conosce solo il link.
+    async getSocietaPubblica(req, res) {
+        try {
+            const { id } = req.params;
+            const societa = await Societa.findByPk(id, {
+                attributes: [
+                    'id', 'denominazione', 'indirizzo', 'comune', 'cap',
+                    'codice_fiscale', 'partita_iva', 'logo_path', 'footer_text',
+                    'ricevuta_telematica_modulo_id', 'ricevuta_telematica_prodotto_id',
+                    'ricevuta_telematica_certificato_secret'
+                ]
+            });
+
+            if (!societa) {
+                return res.status(404).json({ message: 'Societa not found' });
+            }
+
+            const cookieToken = req.cookies?.[cookieName(id)];
+            if (!certificatoValido(societa, cookieToken)) {
+                return res.status(403).json({ message: 'Certificato non valido o non installato su questo browser' });
+            }
+
+            const { ricevuta_telematica_certificato_secret, ...pubblica } = societa.get({ plain: true });
+            return res.status(200).json(pubblica);
+        } catch (error) {
+            console.error('Error fetching societa (pubblica):', error);
             return res.status(500).json({ error: error.message });
         }
     }

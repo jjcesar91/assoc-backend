@@ -176,6 +176,35 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.BOOLEAN,
       allowNull: false,
       defaultValue: false
+    },
+    // Modulo (servizio documents) usato per la compilazione pubblica della
+    // Ricevuta Telematica. Nessuna FK reale: Modulo vive in un altro DB/servizio.
+    // Se null, si usa il primo modulo della società come default.
+    ricevuta_telematica_modulo_id: {
+      type: DataTypes.INTEGER,
+      allowNull: true
+    },
+    // Prodotto (servizio products) usato per generare automaticamente una
+    // proforma quando il socio conferma i propri dati dalla Ricevuta Telematica.
+    // Nessuna FK reale: Product vive in un altro DB/servizio. Se null, nessuna
+    // proforma viene generata (a differenza del modulo, qui non c'è un default).
+    ricevuta_telematica_prodotto_id: {
+      type: DataTypes.INTEGER,
+      allowNull: true
+    },
+    // Conto (servizio payments) usato come conto di incasso quando le proforme
+    // della Ricevuta Telematica vengono confermate in blocco. Nessuna FK reale:
+    // Conto vive in un altro DB/servizio.
+    ricevuta_telematica_conto_id: {
+      type: DataTypes.INTEGER,
+      allowNull: true
+    },
+    // Secret del "certificato" installato come cookie sul browser del cliente per
+    // poter accedere alla pagina pubblica Ricevuta Telematica (vedi certificatoController.js).
+    // Non va mai esposto nelle risposte pubbliche.
+    ricevuta_telematica_certificato_secret: {
+      type: DataTypes.STRING,
+      allowNull: true
     }
   }, {
     sequelize,
