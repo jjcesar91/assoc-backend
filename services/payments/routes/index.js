@@ -97,6 +97,7 @@ router.put('/conti/:id/predefinito', ContoController.setPredefinito);
 router.delete('/conti/:id', ContoController.delete);
 
 router.get('/gruppi', GruppoController.getBySocieta);
+router.get('/gruppi/totali', GruppoController.getTotali);
 router.post('/gruppi/init-aps', GruppoController.initAps);
 router.post('/gruppi/init-asd', GruppoController.initAsd);
 router.post('/gruppi', GruppoController.create);

@@ -1,5 +1,19 @@
-const { Gruppo, PaymentVoceConfig } = require('../models');
+const { Gruppo, PaymentVoceConfig, Payment } = require('../models');
 const { Op } = require('sequelize');
+
+function productsUrl() {
+    return process.env.PRODUCTS_SERVICE_URL || 'http://products_ms:3000';
+}
+
+// Default storico tipo prodotto → codice sottogruppo (retrocompatibilità),
+// sovrascritto dalla configurazione salvata in payment_voci_config.
+const QUOTE_TYPE_TO_CODICE = {
+    quota_associativa: 'AE1',
+    inscription:       'AE1', // retrocompatibilità pagamenti precedenti alla migrazione
+    subscription:      'AE3',
+    tesseramento:      'AE3',
+    generic:           'AE3',
+};
 
 // ---------------------------------------------------------------------------
 // Struttura default gruppi/sottogruppi per APS (Mod. D - Rendiconto per Cassa)
@@ -161,6 +175,108 @@ exports.getBySocieta = async (req, res) => {
             ],
         });
         res.json(records);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// GET /gruppi/totali?societa_id=...&data_da=YYYY-MM-DD&data_a=YYYY-MM-DD
+// Totali per sottogruppo (Bilancio / Rendiconto per Cassa), sempre positivi —
+// il segno è dato dal tipo del gruppo. Esclusi annullati e giroconti.
+// Il sottogruppo si risolve con priorità:
+// 1) gruppo_id esplicito sul pagamento (operazioni manuali/import) → tutto l'importo
+// 2) per ogni voce di payment_items (o per il pagamento se non ha voci):
+//    a) sottogruppo assegnato al prodotto (product_id) in anagrafica prodotto
+//    b) default per tipo prodotto (Configurazione → Contabilità)
+// Le ricevute con più prodotti vengono quindi ripartite voce per voce.
+exports.getTotali = async (req, res) => {
+    try {
+        const { societa_id, data_da, data_a } = req.query;
+        if (!societa_id) return res.status(400).json({ error: 'societa_id obbligatorio' });
+
+        const headers = req.headers['authorization'] ? { Authorization: req.headers['authorization'] } : {};
+        const productsRes = await fetch(`${productsUrl()}/api?societaId=${encodeURIComponent(societa_id)}`, { headers });
+        if (!productsRes.ok) {
+            console.error(`getTotali: products-service ha risposto ${productsRes.status}`);
+            return res.status(502).json({ error: 'Impossibile recuperare i prodotti per il calcolo dei totali' });
+        }
+        const productsData = await productsRes.json();
+
+        const [gruppi, vociConfig] = await Promise.all([
+            Gruppo.findAll({ where: { societa_id }, attributes: ['id', 'codice'] }),
+            PaymentVoceConfig.findAll({ where: { societa_id } }),
+        ]);
+
+        const validIds = new Set(gruppi.map(g => g.id));
+        const codiceToId = {};
+        gruppi.forEach(g => { if (g.codice) codiceToId[g.codice] = g.id; });
+
+        const quoteTypeToGruppoId = {};
+        Object.entries(QUOTE_TYPE_TO_CODICE).forEach(([t, codice]) => {
+            if (codiceToId[codice]) quoteTypeToGruppoId[t] = codiceToId[codice];
+        });
+        vociConfig.forEach(c => {
+            if (c.gruppo_id && validIds.has(c.gruppo_id)) quoteTypeToGruppoId[c.quote_type] = c.gruppo_id;
+        });
+        if (!quoteTypeToGruppoId.inscription && quoteTypeToGruppoId.quota_associativa) {
+            quoteTypeToGruppoId.inscription = quoteTypeToGruppoId.quota_associativa;
+        }
+
+        const productIdToGruppoId = {};
+        (Array.isArray(productsData) ? productsData : []).forEach(p => {
+            if (p.gruppoId && validIds.has(p.gruppoId)) productIdToGruppoId[p.id] = p.gruppoId;
+        });
+
+        const resolveVoce = (productId, quoteTypes) => {
+            if (productId && productIdToGruppoId[productId]) return productIdToGruppoId[productId];
+            if (quoteTypes) {
+                for (const t of String(quoteTypes).split(',').map(s => s.trim())) {
+                    if (quoteTypeToGruppoId[t]) return quoteTypeToGruppoId[t];
+                }
+            }
+            return null;
+        };
+
+        const where = {
+            societa_id,
+            [Op.and]: [
+                { [Op.or]: [{ stato_pagamento: null }, { stato_pagamento: { [Op.notLike]: '3.%' } }] },
+                { [Op.or]: [{ modalita_pagamento: null }, { modalita_pagamento: { [Op.ne]: 'Giroconto' } }] },
+            ],
+        };
+        if (data_da || data_a) {
+            where.data_pagamento = {};
+            if (data_da) where.data_pagamento[Op.gte] = data_da;
+            if (data_a) where.data_pagamento[Op.lte] = data_a;
+        }
+        const payments = await Payment.findAll({
+            where,
+            attributes: ['id', 'importo', 'gruppo_id', 'product_id', 'quote_types', 'payment_items'],
+        });
+
+        // Somme in centesimi per evitare errori di arrotondamento
+        const cents = {};
+        let nonAssegnatoCents = 0;
+        const add = (gruppoId, importo) => {
+            const c = Math.round(Math.abs(parseFloat(importo || 0)) * 100);
+            if (gruppoId) cents[gruppoId] = (cents[gruppoId] || 0) + c;
+            else nonAssegnatoCents += c;
+        };
+
+        payments.forEach(p => {
+            if (p.gruppo_id) return add(p.gruppo_id, p.importo);
+            const items = Array.isArray(p.payment_items) ? p.payment_items : [];
+            if (items.length > 0) {
+                items.forEach(i => add(resolveVoce(i.product_id, i.quote_types), i.importo));
+            } else {
+                add(resolveVoce(p.product_id, p.quote_types), p.importo);
+            }
+        });
+
+        const totali = {};
+        Object.entries(cents).forEach(([id, c]) => { totali[id] = c / 100; });
+        res.json({ totali, non_assegnato: nonAssegnatoCents / 100 });
     } catch (error) {
         console.error(error);
         res.status(500).json({ error: error.message });
