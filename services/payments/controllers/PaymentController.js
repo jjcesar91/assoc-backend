@@ -169,34 +169,46 @@ function isPagamentoValido(p) {
 // Cerca una quota associativa già pagata dallo stesso socio (per socio_id o
 // codice fiscale) nell'anno contabile di `data_pagamento`. Restituisce il
 // pagamento trovato oppure null. `excludeId` esclude il record in modifica.
-async function findQuotaAssociativaPagata({ societa_id, socio_id, codice_fiscale, data_pagamento, excludeId, authHeader }) {
+// Cerca nell'anno contabile di `data_pagamento` un documento non annullato dello
+// stesso socio (socio_id o codice fiscale) che soddisfi `match`.
+// - includeProforma: considera anche le proforme (default: solo pagamenti);
+// - societaTipo: { tipo, dataInizio } già noti (es. endpoint pubblici senza token),
+//   altrimenti vengono letti dal servizio users con `authHeader`.
+async function findDocumentoSocioInAnno({ societa_id, socio_id, codice_fiscale, data_pagamento, excludeId, authHeader, societaTipo, includeProforma = false, match }) {
     if (!societa_id || (!socio_id && !codice_fiscale)) return null;
 
-    const { tipo, dataInizio } = await fetchSocietaTipo(societa_id, authHeader);
+    const { tipo, dataInizio } = societaTipo || await fetchSocietaTipo(societa_id, authHeader);
     const tipoEffettivo = tipo || 'solare';
-    const targetAnno = deriveTargetAnnoDaData(data_pagamento || new Date(), tipoEffettivo, dataInizio);
-    const annoStartStr = getAnnoStart(tipoEffettivo, dataInizio, targetAnno);
-    const annoEndStr = getAnnoEnd(tipoEffettivo, dataInizio, targetAnno);
+    const inizio = dataInizio || '01-01';
+    const targetAnno = deriveTargetAnnoDaData(data_pagamento || new Date(), tipoEffettivo, inizio);
+    const annoStartStr = getAnnoStart(tipoEffettivo, inizio, targetAnno);
+    const annoEndStr = getAnnoEnd(tipoEffettivo, inizio, targetAnno);
 
     const chi = [];
     if (socio_id) chi.push({ socio_id });
     if (codice_fiscale) chi.push({ codice_fiscale: { [Op.iLike]: codice_fiscale } });
 
+    const condizioni = [
+        { [Op.or]: chi },
+        { [Op.or]: [{ stato_pagamento: null }, { stato_pagamento: { [Op.notLike]: '3.%' } }] },
+    ];
+    if (!includeProforma) {
+        condizioni.push({ [Op.or]: [{ tipo_documento: null }, { tipo_documento: { [Op.ne]: 'proforma' } }] });
+    }
     const where = {
         societa_id,
-        quote_types: { [Op.iLike]: '%quota_associativa%' },
         data_pagamento: { [Op.gte]: annoStartStr, [Op.lt]: annoEndStr },
-        [Op.and]: [
-            { [Op.or]: chi },
-            { [Op.or]: [{ tipo_documento: null }, { tipo_documento: { [Op.ne]: 'proforma' } }] },
-            { [Op.or]: [{ stato_pagamento: null }, { stato_pagamento: { [Op.notLike]: '3.%' } }] },
-        ],
+        [Op.and]: condizioni,
     };
     if (excludeId) where.id = { [Op.ne]: excludeId };
 
-    const found = await Payment.findAll({ where });
-    // quote_types è una lista separata da virgole: il LIKE è solo un prefiltro
-    return found.find(p => hasQuotaAssociativa(p.quote_types)) || null;
+    const found = await Payment.findAll({ where, order: [['data_pagamento', 'DESC']] });
+    return found.find(match) || null;
+}
+
+// Quota associativa già PAGATA (no proforma) dallo stesso socio nell'anno.
+async function findQuotaAssociativaPagata(opts) {
+    return findDocumentoSocioInAnno({ ...opts, includeProforma: false, match: p => hasQuotaAssociativa(p.quote_types) });
 }
 
 function quotaDuplicataResponse(res, esistente) {
@@ -209,6 +221,8 @@ function quotaDuplicataResponse(res, esistente) {
 }
 
 exports.findQuotaAssociativaPagata = findQuotaAssociativaPagata;
+exports.findDocumentoSocioInAnno = findDocumentoSocioInAnno;
+exports.hasQuotaAssociativa = hasQuotaAssociativa;
 
 exports.getAll = async (req, res) => {
     try {
