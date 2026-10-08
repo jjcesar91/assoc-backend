@@ -152,6 +152,64 @@ async function findLastProgressivoInAnno(societaId, tipo, annoStartStr, annoEndS
     return 0; // Nessun pagamento trovato
 }
 
+// ── Unicità quota associativa ───────────────────────────────────────────────
+// Un socio può avere UNA sola quota associativa pagata per anno contabile.
+// "Pagata" = tipo_documento diverso da 'proforma' e non annullata (stato_pagamento
+// che non inizia con '3.'); l'anno è quello a cui appartiene data_pagamento,
+// stessa regola usata dal frontend (Soci, Nuova ricevuta).
+
+function hasQuotaAssociativa(quoteTypes) {
+    return String(quoteTypes || '').split(',').map(t => t.trim()).includes('quota_associativa');
+}
+
+function isPagamentoValido(p) {
+    return (p.tipo_documento || 'pagamento') !== 'proforma' && !String(p.stato_pagamento || '').startsWith('3.');
+}
+
+// Cerca una quota associativa già pagata dallo stesso socio (per socio_id o
+// codice fiscale) nell'anno contabile di `data_pagamento`. Restituisce il
+// pagamento trovato oppure null. `excludeId` esclude il record in modifica.
+async function findQuotaAssociativaPagata({ societa_id, socio_id, codice_fiscale, data_pagamento, excludeId, authHeader }) {
+    if (!societa_id || (!socio_id && !codice_fiscale)) return null;
+
+    const { tipo, dataInizio } = await fetchSocietaTipo(societa_id, authHeader);
+    const tipoEffettivo = tipo || 'solare';
+    const targetAnno = deriveTargetAnnoDaData(data_pagamento || new Date(), tipoEffettivo, dataInizio);
+    const annoStartStr = getAnnoStart(tipoEffettivo, dataInizio, targetAnno);
+    const annoEndStr = getAnnoEnd(tipoEffettivo, dataInizio, targetAnno);
+
+    const chi = [];
+    if (socio_id) chi.push({ socio_id });
+    if (codice_fiscale) chi.push({ codice_fiscale: { [Op.iLike]: codice_fiscale } });
+
+    const where = {
+        societa_id,
+        quote_types: { [Op.iLike]: '%quota_associativa%' },
+        data_pagamento: { [Op.gte]: annoStartStr, [Op.lt]: annoEndStr },
+        [Op.and]: [
+            { [Op.or]: chi },
+            { [Op.or]: [{ tipo_documento: null }, { tipo_documento: { [Op.ne]: 'proforma' } }] },
+            { [Op.or]: [{ stato_pagamento: null }, { stato_pagamento: { [Op.notLike]: '3.%' } }] },
+        ],
+    };
+    if (excludeId) where.id = { [Op.ne]: excludeId };
+
+    const found = await Payment.findAll({ where });
+    // quote_types è una lista separata da virgole: il LIKE è solo un prefiltro
+    return found.find(p => hasQuotaAssociativa(p.quote_types)) || null;
+}
+
+function quotaDuplicataResponse(res, esistente) {
+    const rif = esistente.numero_ricevuta ? ` (ricevuta n. ${esistente.numero_ricevuta})` : '';
+    return res.status(409).json({
+        error: `Quota associativa già pagata per questo anno${rif}. È consentita una sola quota associativa per anno.`,
+        code: 'QUOTA_ASSOCIATIVA_DUPLICATA',
+        payment_id: esistente.id,
+    });
+}
+
+exports.findQuotaAssociativaPagata = findQuotaAssociativaPagata;
+
 exports.getAll = async (req, res) => {
     try {
         const { societa_id, codice_fiscale } = req.query;
@@ -198,6 +256,20 @@ exports.getAll = async (req, res) => {
 exports.create = async (req, res) => {
     try {
         const { items, emetti_ricevuta, anno_ricevuta, progressivo_iniziale, ...commonFields } = req.body;
+
+        const tipiRichiesti = Array.isArray(items) && items.length > 0
+            ? items.map(i => i.quote_types).join(',')
+            : commonFields.quote_types;
+        if (hasQuotaAssociativa(tipiRichiesti) && isPagamentoValido(commonFields)) {
+            const esistente = await findQuotaAssociativaPagata({
+                societa_id: commonFields.societa_id,
+                socio_id: commonFields.socio_id,
+                codice_fiscale: commonFields.codice_fiscale,
+                data_pagamento: commonFields.data_pagamento,
+                authHeader: req.headers['authorization'],
+            });
+            if (esistente) return quotaDuplicataResponse(res, esistente);
+        }
 
         let progressivo_stagione = null;
         let numero_ricevuta = commonFields.numero_ricevuta || null;
@@ -332,6 +404,29 @@ exports.update = async (req, res) => {
     try {
         const { id } = req.params;
         const patch = { ...req.body, modificato_da: req.user?.username || req.body.modificato_da || null };
+
+        // Controllo unicità solo se la modifica tocca campi che determinano
+        // "quota associativa pagata di quel socio in quell'anno": così le modifiche
+        // a note/etichette/ricevute su eventuali duplicati storici restano possibili.
+        const CAMPI_QUOTA = ['quote_types', 'payment_items', 'socio_id', 'codice_fiscale', 'data_pagamento', 'tipo_documento', 'stato_pagamento', 'societa_id'];
+        if (CAMPI_QUOTA.some(k => k in req.body)) {
+            const attuale = await Payment.findByPk(id);
+            if (attuale) {
+                const risultato = { ...attuale.get({ plain: true }), ...patch };
+                if (hasQuotaAssociativa(risultato.quote_types) && isPagamentoValido(risultato)) {
+                    const esistente = await findQuotaAssociativaPagata({
+                        societa_id: risultato.societa_id,
+                        socio_id: risultato.socio_id,
+                        codice_fiscale: risultato.codice_fiscale,
+                        data_pagamento: risultato.data_pagamento,
+                        excludeId: attuale.id,
+                        authHeader: req.headers['authorization'],
+                    });
+                    if (esistente) return quotaDuplicataResponse(res, esistente);
+                }
+            }
+        }
+
         const [updated] = await Payment.update(patch, { where: { id } });
         if (updated) {
             const updatedPayment = await Payment.findByPk(id);
@@ -443,6 +538,18 @@ exports.convertiProforma = async (req, res) => {
         if (!payment) return res.status(404).json({ error: 'Payment not found' });
         if (payment.tipo_documento !== 'proforma') {
             return res.status(400).json({ error: 'Il pagamento non è di tipo proforma' });
+        }
+
+        if (hasQuotaAssociativa(payment.quote_types) && !String(payment.stato_pagamento || '').startsWith('3.')) {
+            const esistente = await findQuotaAssociativaPagata({
+                societa_id: payment.societa_id,
+                socio_id: payment.socio_id,
+                codice_fiscale: payment.codice_fiscale,
+                data_pagamento: payment.data_pagamento,
+                excludeId: payment.id,
+                authHeader: req.headers['authorization'],
+            });
+            if (esistente) return quotaDuplicataResponse(res, esistente);
         }
 
         const { tipo, dataInizio } = await fetchSocietaTipo(payment.societa_id, req.headers['authorization']);
