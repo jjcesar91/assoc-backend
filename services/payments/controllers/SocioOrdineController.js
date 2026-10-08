@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const { Payment, Conto, RicevutaToken } = require('../models');
+const { findQuotaAssociativaPagata } = require('./PaymentController');
 
 // Ordini creati dal socio nella propria area riservata ("frontend socio").
 //
@@ -56,6 +57,19 @@ async function fetchSocio(socioId, authHeader) {
     }
 }
 
+// true se il socio ha già una quota associativa pagata nell'anno contabile corrente:
+// in quel caso la quota non è acquistabile (una sola per anno).
+async function quotaGiaPagata(ctx, socio, authHeader) {
+    const esistente = await findQuotaAssociativaPagata({
+        societa_id: ctx.societaId,
+        socio_id: ctx.socioId,
+        codice_fiscale: socio?.codice_fiscale || null,
+        data_pagamento: new Date().toISOString().split('T')[0],
+        authHeader,
+    });
+    return !!esistente;
+}
+
 function nominativoSocio(socio) {
     if (!socio) return '';
     if (socio.tipo_socio === 'associazione') return socio.ragione_sociale || '';
@@ -69,7 +83,14 @@ const SocioOrdineController = {
         const ctx = getSocioContext(req);
         if (!ctx) return res.status(403).json({ error: 'Accesso riservato ai soci' });
         try {
-            const prodotti = await fetchCatalogoOnline(ctx.societaId, req.headers['authorization']);
+            const authHeader = req.headers['authorization'];
+            const prodotti = await fetchCatalogoOnline(ctx.societaId, authHeader);
+            if (prodotti.some(p => p.type === 'quota_associativa')) {
+                const socio = await fetchSocio(ctx.socioId, authHeader);
+                if (await quotaGiaPagata(ctx, socio, authHeader)) {
+                    return res.json(prodotti.filter(p => p.type !== 'quota_associativa'));
+                }
+            }
             return res.json(prodotti);
         } catch (err) {
             console.error('Errore getCatalogo socio:', err);
@@ -184,12 +205,24 @@ const SocioOrdineController = {
                 quoteParts.push(`${prodotto.description} (x${qty}) €${formatEuro(importoRiga)}`);
             }
 
+            const socio = await fetchSocio(ctx.socioId, req.headers['authorization']);
+
+            const quote = paymentItems.filter(i => i.quote_types === 'quota_associativa');
+            if (quote.length > 1 || quote.some(i => i.qty > 1)) {
+                return res.status(400).json({ error: 'È possibile acquistare una sola quota associativa per anno' });
+            }
+            if (quote.length === 1 && await quotaGiaPagata(ctx, socio, req.headers['authorization'])) {
+                return res.status(409).json({
+                    error: 'La quota associativa per questo anno risulta già pagata',
+                    code: 'QUOTA_ASSOCIATIVA_DUPLICATA',
+                });
+            }
+
             const totale = Math.round(paymentItems.reduce((s, i) => s + i.importo, 0) * 100) / 100;
             if (totale <= 0) {
                 return res.status(400).json({ error: 'Il totale dell\'ordine non è valido' });
             }
 
-            const socio = await fetchSocio(ctx.socioId, req.headers['authorization']);
             const tessItem = paymentItems.find(i => i.quote_types === 'tesseramento');
             const subItem = paymentItems.find(i => i.quote_types === 'subscription');
             const primaryItem = subItem || tessItem || paymentItems[0];
