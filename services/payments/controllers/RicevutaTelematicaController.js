@@ -1,4 +1,5 @@
 const { Payment } = require('../models');
+const { findDocumentoSocioInAnno, hasQuotaAssociativa } = require('./PaymentController');
 
 // Creazione della proforma associata alla pagina pubblica
 // /ricevuta-telematica/:societaId (nessuna autenticazione).
@@ -35,6 +36,35 @@ function addEtichetta(etichetteStr, nuova) {
     return list.join(',');
 }
 
+function usersUrl() {
+    return process.env.USERS_SERVICE_URL || 'http://users_ms:3000';
+}
+
+// Tipo di anno contabile della società dall'endpoint pubblico del servizio users
+// (qui non c'è un token: si inoltra il cookie del certificato Ricevuta Telematica,
+// lo stesso richiesto alla pagina pubblica). In caso di errore: anno solare.
+async function fetchSocietaTipoPubblico(societaId, cookieHeader) {
+    try {
+        const headers = cookieHeader ? { Cookie: cookieHeader } : {};
+        const res = await fetch(`${usersUrl()}/api/public/societa/${societaId}`, { headers });
+        if (res.ok) {
+            const s = await res.json();
+            return { tipo: s.tipo_anno_associativo || 'solare', dataInizio: s.data_inizio_anno_associativo || '01-01' };
+        }
+        console.error(`fetchSocietaTipoPubblico: risposta non ok (${res.status}) per societa ${societaId}`);
+    } catch (err) {
+        console.error('fetchSocietaTipoPubblico:', err.message);
+    }
+    return { tipo: 'solare', dataInizio: '01-01' };
+}
+
+// true se il documento contiene il prodotto (riga principale o payment_items)
+function contieneProdotto(p, prodottoId) {
+    if (String(p.product_id) === String(prodottoId)) return true;
+    const items = Array.isArray(p.payment_items) ? p.payment_items : [];
+    return items.some(i => String(i.product_id) === String(prodottoId));
+}
+
 async function fetchProdottoPubblico(id) {
     try {
         const res = await fetch(`${productsUrl()}/api/public/${id}`);
@@ -61,8 +91,33 @@ module.exports = {
                 return res.status(400).json({ error: 'Prodotto non valido per questa società' });
             }
 
-            const prezzoUnitario = parseFloat(prodotto.basePrice || 0);
             const oggi = new Date().toISOString().split('T')[0];
+
+            // Niente proforma se nell'anno contabile corrente esiste già, per lo
+            // stesso socio, una proforma o una ricevuta (non annullata) dello stesso
+            // prodotto — o di una qualsiasi quota associativa se il prodotto lo è.
+            const esistente = await findDocumentoSocioInAnno({
+                societa_id,
+                socio_id: socio.id,
+                codice_fiscale: socio.codice_fiscale || null,
+                data_pagamento: oggi,
+                societaTipo: await fetchSocietaTipoPubblico(societa_id, req.headers['cookie']),
+                includeProforma: true,
+                match: p => contieneProdotto(p, prodotto.id)
+                    || (prodotto.type === 'quota_associativa' && hasQuotaAssociativa(p.quote_types)),
+            });
+            if (esistente) {
+                const isProforma = esistente.tipo_documento === 'proforma';
+                const rif = !isProforma && esistente.numero_ricevuta ? ` n. ${esistente.numero_ricevuta}` : '';
+                return res.status(409).json({
+                    error: `Per questo socio esiste già ${isProforma ? 'una proforma' : `una ricevuta${rif}`} per l'anno in corso: la proforma non è stata generata.`,
+                    code: 'PROFORMA_TELEMATICA_DUPLICATA',
+                    payment_id: esistente.id,
+                    tipo_documento: esistente.tipo_documento || 'pagamento',
+                });
+            }
+
+            const prezzoUnitario = parseFloat(prodotto.basePrice || 0);
             const nominativo = [socio.nome, socio.cognome].filter(Boolean).join(' ');
             const periodicity = prodotto.type === 'tesseramento' ? (prodotto.periodicity || null) : null;
 
