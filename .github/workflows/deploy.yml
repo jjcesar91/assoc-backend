@@ -7,6 +7,33 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # Due ambienti di produzione sullo stesso host, stesso branch master:
+    #   prod  → app.nonprofitgest.it      (~/management-software-prod)
+    #   prod2 → app.gestionalenonprofit.it (~/management-software-prod2)
+    # Deploy in sequenza (max-parallel 1) per non saturare l'host con due build
+    # contemporanee; fail-fast off: un errore su un ambiente non blocca l'altro.
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - env_name: prod
+            path_secret: DEPLOY_PATH_PROD
+            project: backend_prod
+            suffix: _prod
+            gateway_port: "1080"
+            ms_port_prefix: "400"
+            debug_port_prefix: "102"
+            db_port_prefix: "643"
+          - env_name: prod2
+            path_secret: DEPLOY_PATH_PROD2
+            project: backend_prod2
+            suffix: _prod2
+            gateway_port: "2080"
+            ms_port_prefix: "500"
+            debug_port_prefix: "112"
+            db_port_prefix: "743"
+    name: deploy (${{ matrix.env_name }})
     steps:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
@@ -17,31 +44,51 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           script: |
             set -e
-            cd ${{ secrets.DEPLOY_PATH_PROD }}
+            DEPLOY_DIR="${{ secrets[matrix.path_secret] }}"
+            # Ambiente non ancora inizializzato sull'host (secret mancante o checkout
+            # assente): si salta senza far fallire il deploy degli altri ambienti.
+            if [ -z "$DEPLOY_DIR" ] || [ ! -d "$DEPLOY_DIR/.git" ]; then
+              echo "::warning::Ambiente ${{ matrix.env_name }} non inizializzato ($DEPLOY_DIR): deploy saltato."
+              exit 0
+            fi
+            cd "$DEPLOY_DIR"
 
             # Builda con il builder classico: le immagini cosi' generate includono
             # il metadato "ContainerConfig" richiesto da docker-compose v1, evitando
             # il bug "KeyError: 'ContainerConfig'" durante la ricreazione dei container.
             export DOCKER_BUILDKIT=0
             export COMPOSE_DOCKER_CLI_BUILD=0
-            # Nome progetto dedicato: isola rete/volumi dallo stack dev (che vive
-            # nella cartella "docker" con project name di default "docker").
-            export COMPOSE_PROJECT_NAME=backend_prod
+            # Nome progetto dedicato per ambiente: isola rete/volumi dallo stack dev
+            # (project "docker") e tra le due prod (backend_prod / backend_prod2).
+            export COMPOSE_PROJECT_NAME=${{ matrix.project }}
+            # Nomi container e porte host dell'ambiente (vedi docker/docker-compose.yml).
+            export CONTAINER_SUFFIX=${{ matrix.suffix }}
+            export GATEWAY_PORT=${{ matrix.gateway_port }}
+            export MS_PORT_PREFIX=${{ matrix.ms_port_prefix }}
+            export DEBUG_PORT_PREFIX=${{ matrix.debug_port_prefix }}
+            export DB_PORT_PREFIX=${{ matrix.db_port_prefix }}
+            SUFFIX=${{ matrix.suffix }}
+            echo "Ambiente: ${{ matrix.env_name }} (progetto $COMPOSE_PROJECT_NAME)"
 
             BEFORE=$(git rev-parse HEAD)
             git pull origin master
             AFTER=$(git rev-parse HEAD)
 
-            if [ "$BEFORE" = "$AFTER" ]; then
+            cd docker
+
+            # Stack non ancora avviato (es. primo deploy di un nuovo ambiente):
+            # rebuild completo anche se il checkout era gia' aggiornato.
+            if [ -z "$(docker-compose ps -q)" ]; then
+              echo "Nessun container attivo per $COMPOSE_PROJECT_NAME: avvio completo."
+              CHANGED="docker/"
+            elif [ "$BEFORE" = "$AFTER" ]; then
               echo "Nessuna modifica rilevata: nessun rebuild necessario."
               exit 0
+            else
+              CHANGED=$(git diff --name-only "$BEFORE" "$AFTER")
             fi
-
-            CHANGED=$(git diff --name-only "$BEFORE" "$AFTER")
             echo "File modificati:"
             echo "$CHANGED"
-
-            cd docker
 
             REBUILD_USERS=false
             REBUILD_PAYMENTS=false
@@ -93,10 +140,10 @@ jobs:
             if [ "$REBUILD_USERS" = "true" ]; then
               echo "Waiting for users_ms to complete migrations..."
               sleep 20
-              docker logs users_ms_prod 2>&1 | grep -E "\[entrypoint\]|Migration" || true
-              if [ "$(docker inspect -f '{{.State.Running}}' users_ms_prod 2>/dev/null)" != "true" ]; then
-                echo "ERRORE: users_ms_prod non e' in esecuzione dopo il deploy (migrazioni fallite?)."
-                docker logs users_ms_prod --tail 80
+              docker logs users_ms$SUFFIX 2>&1 | grep -E "\[entrypoint\]|Migration" || true
+              if [ "$(docker inspect -f '{{.State.Running}}' users_ms$SUFFIX 2>/dev/null)" != "true" ]; then
+                echo "ERRORE: users_ms$SUFFIX non e' in esecuzione dopo il deploy (migrazioni fallite?)."
+                docker logs users_ms$SUFFIX --tail 80
                 exit 1
               fi
             fi
@@ -105,10 +152,10 @@ jobs:
             if [ "$REBUILD_PAYMENTS" = "true" ]; then
               echo "Waiting for payments_ms to complete migrations..."
               sleep 20
-              docker logs payments_ms_prod 2>&1 | grep -E "\[entrypoint\]|\[baseline\]|migrat" || true
-              if [ "$(docker inspect -f '{{.State.Running}}' payments_ms_prod 2>/dev/null)" != "true" ]; then
-                echo "ERRORE: payments_ms_prod non e' in esecuzione dopo il deploy (migrazioni fallite?)."
-                docker logs payments_ms_prod --tail 80
+              docker logs payments_ms$SUFFIX 2>&1 | grep -E "\[entrypoint\]|\[baseline\]|migrat" || true
+              if [ "$(docker inspect -f '{{.State.Running}}' payments_ms$SUFFIX 2>/dev/null)" != "true" ]; then
+                echo "ERRORE: payments_ms$SUFFIX non e' in esecuzione dopo il deploy (migrazioni fallite?)."
+                docker logs payments_ms$SUFFIX --tail 80
                 exit 1
               fi
             fi
@@ -119,7 +166,7 @@ jobs:
             if [ "$REBUILD_ACTIVITIES" = "true" ]; then
               echo "Waiting for activities_ms to complete migrations..."
               sleep 20
-              ACTIVITIES_LOGS=$(docker logs activities_ms_prod 2>&1 | grep -E "synced successfully|Backfill|fallito" || true)
+              ACTIVITIES_LOGS=$(docker logs activities_ms$SUFFIX 2>&1 | grep -E "synced successfully|Backfill|fallito" || true)
               echo "$ACTIVITIES_LOGS"
               if echo "$ACTIVITIES_LOGS" | grep -q "fallito"; then
                 echo "ERRORE: il backfill di activities_ms e' fallito."
