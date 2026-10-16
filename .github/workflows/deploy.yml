@@ -42,8 +42,18 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
+          # Margine per l'attesa del lock (deploy di altri ambienti/repo in corso).
+          command_timeout: 45m
           script: |
             set -e
+            # Un solo deploy alla volta sull'host (dev, prod, prod2, backend e frontend
+            # condividono lo stesso Docker daemon su una macchina da 4 GB): build
+            # concorrenti mandano il daemon in timeout e lasciano container a meta'.
+            exec 9>/tmp/assoc-deploy.lock
+            echo "In attesa del lock di deploy..."
+            flock 9
+            # Timeout delle chiamate di docker-compose al daemon (default 60s).
+            export COMPOSE_HTTP_TIMEOUT=300
             DEPLOY_DIR="${{ secrets[matrix.path_secret] }}"
             # Ambiente non ancora inizializzato sull'host (secret mancante o checkout
             # assente): si salta senza far fallire il deploy degli altri ambienti.
