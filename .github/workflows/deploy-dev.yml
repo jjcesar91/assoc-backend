@@ -38,6 +38,13 @@ jobs:
             # cartella "docker"): isola rete/volumi dallo stack prod (backend_prod),
             # che vive in un checkout separato sullo stesso host.
             export COMPOSE_PROJECT_NAME=docker
+            # Nomi container e porte host di dev (stesso docker-compose.yml delle prod,
+            # vedi deploy.yml): suffisso vuoto, gateway 80, microservizi 300x, debug 922x, DB 543x.
+            export CONTAINER_SUFFIX=
+            export GATEWAY_PORT=80
+            export MS_PORT_PREFIX=300
+            export DEBUG_PORT_PREFIX=92
+            export DB_PORT_PREFIX=543
 
             BEFORE=$(git rev-parse HEAD)
             git pull origin dev
@@ -68,8 +75,26 @@ jobs:
               docker-compose up -d --no-deps "$@"
             }
 
-            # Modifiche all'infrastruttura docker (compose, nginx.conf, ...) => rebuild completo
+            # Modifiche all'infrastruttura docker (compose, nginx.conf, ...) => rebuild completo.
+            # Eccezione: se e' cambiato solo docker-compose.yml ma la configurazione
+            # effettiva generata per questo ambiente e' identica (es. refactoring del
+            # compose), non si ricrea nulla.
+            INFRA_CHANGED=false
             if echo "$CHANGED" | grep -qE '^docker/'; then
+              INFRA_CHANGED=true
+              if [ "$CHANGED" != "docker/" ] && ! echo "$CHANGED" | grep -E '^docker/' | grep -qvx 'docker/docker-compose.yml'; then
+                git show "$BEFORE:docker/docker-compose.yml" > .compose-before.yml
+                CFG_BEFORE=$(docker-compose -f .compose-before.yml config 2>/dev/null || true)
+                CFG_AFTER=$(docker-compose -f docker-compose.yml config 2>/dev/null || true)
+                rm -f .compose-before.yml
+                if [ -n "$CFG_AFTER" ] && [ "$CFG_BEFORE" = "$CFG_AFTER" ]; then
+                  echo "docker-compose.yml modificato ma configurazione effettiva invariata: nessun rebuild dell'infrastruttura."
+                  INFRA_CHANGED=false
+                fi
+              fi
+            fi
+
+            if [ "$INFRA_CHANGED" = "true" ]; then
               echo "Modifiche all'infrastruttura docker: rebuild completo."
               recreate
               docker-compose restart nginx || true

@@ -114,8 +114,26 @@ jobs:
               docker-compose up -d --no-deps "$@"
             }
 
-            # Modifiche all'infrastruttura docker (compose, nginx.conf, ...) => rebuild completo
+            # Modifiche all'infrastruttura docker (compose, nginx.conf, ...) => rebuild completo.
+            # Eccezione: se e' cambiato solo docker-compose.yml ma la configurazione
+            # effettiva generata per questo ambiente e' identica (es. refactoring del
+            # compose), non si ricrea nulla.
+            INFRA_CHANGED=false
             if echo "$CHANGED" | grep -qE '^docker/'; then
+              INFRA_CHANGED=true
+              if [ "$CHANGED" != "docker/" ] && ! echo "$CHANGED" | grep -E '^docker/' | grep -qvx 'docker/docker-compose.yml'; then
+                git show "$BEFORE:docker/docker-compose.yml" > .compose-before.yml
+                CFG_BEFORE=$(docker-compose -f .compose-before.yml config 2>/dev/null || true)
+                CFG_AFTER=$(docker-compose -f docker-compose.yml config 2>/dev/null || true)
+                rm -f .compose-before.yml
+                if [ -n "$CFG_AFTER" ] && [ "$CFG_BEFORE" = "$CFG_AFTER" ]; then
+                  echo "docker-compose.yml modificato ma configurazione effettiva invariata: nessun rebuild dell'infrastruttura."
+                  INFRA_CHANGED=false
+                fi
+              fi
+            fi
+
+            if [ "$INFRA_CHANGED" = "true" ]; then
               echo "Modifiche all'infrastruttura docker: rebuild completo."
               recreate
               docker-compose restart nginx || true

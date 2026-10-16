@@ -23,7 +23,7 @@ services:
   # --- Template Service ---
   template_ms:
     build: ../services/template
-    container_name: template_ms${CONTAINER_SUFFIX:-_prod}
+    container_name: template_ms${CONTAINER_SUFFIX-_prod}
     restart: unless-stopped
     environment:
       - PORT=3000
@@ -47,7 +47,7 @@ services:
 
   template_db:
     image: postgres:13
-    container_name: template_db${CONTAINER_SUFFIX:-_prod}
+    container_name: template_db${CONTAINER_SUFFIX-_prod}
     restart: unless-stopped
     environment:
       - POSTGRES_USER=postgres
@@ -63,7 +63,7 @@ services:
   # --- Auth Service ---
   auth_ms:
     build: ../services/auth
-    container_name: auth_ms${CONTAINER_SUFFIX:-_prod}
+    container_name: auth_ms${CONTAINER_SUFFIX-_prod}
     restart: unless-stopped
     environment:
       - PORT=3000
@@ -90,7 +90,7 @@ services:
 
   auth_db:
     image: postgres:13
-    container_name: auth_db${CONTAINER_SUFFIX:-_prod}
+    container_name: auth_db${CONTAINER_SUFFIX-_prod}
     restart: unless-stopped
     environment:
       - POSTGRES_USER=postgres
@@ -106,7 +106,7 @@ services:
   # --- Users Service ---
   users_ms:
     build: ../services/users
-    container_name: users_ms${CONTAINER_SUFFIX:-_prod}
+    container_name: users_ms${CONTAINER_SUFFIX-_prod}
     restart: unless-stopped
     environment:
       - PORT=3000
@@ -138,7 +138,7 @@ services:
 
   users_db:
     image: postgres:13
-    container_name: users_db${CONTAINER_SUFFIX:-_prod}
+    container_name: users_db${CONTAINER_SUFFIX-_prod}
     restart: unless-stopped
     environment:
       - POSTGRES_USER=postgres
@@ -154,7 +154,7 @@ services:
   # --- Documents Service ---
   documents_ms:
     build: ../services/documents
-    container_name: documents_ms${CONTAINER_SUFFIX:-_prod}
+    container_name: documents_ms${CONTAINER_SUFFIX-_prod}
     restart: unless-stopped
     environment:
       - PORT=3000
@@ -177,7 +177,7 @@ services:
 
   documents_db:
     image: postgres:13
-    container_name: documents_db${CONTAINER_SUFFIX:-_prod}
+    container_name: documents_db${CONTAINER_SUFFIX-_prod}
     restart: unless-stopped
     environment:
       - POSTGRES_USER=postgres
@@ -193,7 +193,7 @@ services:
   # --- Products Service ---
   products_ms:
     build: ../services/products
-    container_name: products_ms${CONTAINER_SUFFIX:-_prod}
+    container_name: products_ms${CONTAINER_SUFFIX-_prod}
     restart: unless-stopped
     environment:
       - PORT=3000
@@ -216,7 +216,7 @@ services:
 
   products_db:
     image: postgres:13
-    container_name: products_db${CONTAINER_SUFFIX:-_prod}
+    container_name: products_db${CONTAINER_SUFFIX-_prod}
     restart: unless-stopped
     environment:
       - POSTGRES_USER=postgres
@@ -232,7 +232,7 @@ services:
   # --- Payments Service ---
   payments_ms:
     build: ../services/payments
-    container_name: payments_ms${CONTAINER_SUFFIX:-_prod}
+    container_name: payments_ms${CONTAINER_SUFFIX-_prod}
     restart: unless-stopped
     environment:
       - PORT=3000
@@ -259,7 +259,7 @@ services:
 
   payments_db:
     image: postgres:13
-    container_name: payments_db${CONTAINER_SUFFIX:-_prod}
+    container_name: payments_db${CONTAINER_SUFFIX-_prod}
     restart: unless-stopped
     environment:
       - POSTGRES_USER=postgres
@@ -275,7 +275,7 @@ services:
   # --- Activities Service ---
   activities_ms:
     build: ../services/activities
-    container_name: activities_ms${CONTAINER_SUFFIX:-_prod}
+    container_name: activities_ms${CONTAINER_SUFFIX-_prod}
     restart: unless-stopped
     environment:
       - PORT=3000
@@ -298,7 +298,7 @@ services:
 
   activities_db:
     image: postgres:13
-    container_name: activities_db${CONTAINER_SUFFIX:-_prod}
+    container_name: activities_db${CONTAINER_SUFFIX-_prod}
     restart: unless-stopped
     environment:
       - POSTGRES_USER=postgres
