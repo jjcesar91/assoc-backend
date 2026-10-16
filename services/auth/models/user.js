@@ -74,6 +74,11 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.INTEGER,
       allowNull: true,
       defaultValue: null   // id della società di appartenenza (null solo per superuser)
+    },
+    sessions_revoked_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      defaultValue: null   // i refresh token emessi prima di questa data non sono più validi (es. dopo reset password)
     }
   }, {
     sequelize,

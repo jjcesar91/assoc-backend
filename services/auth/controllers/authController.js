@@ -1,5 +1,10 @@
-const { User } = require('../models');
+const { User, PasswordResetToken, sequelize } = require('../models');
 const jwt = require('jsonwebtoken');
+const {
+    createResetToken,
+    findValidToken,
+    generateUnusablePassword,
+} = require('../utils/passwordReset');
 const { randomUUID } = require('crypto');
 const { ValidationError, Op } = require('sequelize');
 
@@ -150,6 +155,11 @@ exports.refreshToken = async (req, res) => {
         
         const user = await User.findByPk(decoded.id);
         if (!user) return res.sendStatus(403);
+        // Sessioni revocate (es. password reimpostata via link): il refresh token
+        // emesso prima della revoca non vale più.
+        if (user.sessions_revoked_at && decoded.iat * 1000 < new Date(user.sessions_revoked_at).getTime()) {
+            return res.sendStatus(403);
+        }
 
         const societaIds = await getSocietaIdsForEmail(user.email, isSocioRole(user.role));
         const tokens = generateTokens(user, societaIds.length ? societaIds : null);
@@ -700,5 +710,119 @@ exports.resetSocioPassword = async (req, res) => {
         res.json({ password_plain: plainPassword });
     } catch (error) {
         res.status(500).json({ error: error.message });
+    }
+};
+
+// ---------------------------------------------------------------------------
+// Link di impostazione/reimpostazione password (Backoffice superuser)
+// Il token viaggia nel frammento dell'URL (#t=...) e qui solo nel body delle POST:
+// non finisce nei log di accesso né nell'header Referer.
+// ---------------------------------------------------------------------------
+
+const INVALID_LINK_ERROR = 'Link non valido o scaduto. Chiedi un nuovo link.';
+
+// POST /admin/users/:id/password-reset-link (superuser) → { token, expiresAt }
+// Genera un nuovo link per l'utente; i link precedenti non usati smettono di valere.
+exports.adminCreatePasswordResetLink = async (req, res) => {
+    try {
+        const user = await User.findByPk(req.params.id);
+        if (!user) return res.sendStatus(404);
+        if (user.role === 'superuser') {
+            return res.status(403).json({ error: 'Non è possibile generare link per un superuser' });
+        }
+        const { token, expiresAt } = await createResetToken(PasswordResetToken, user.id, req.user.id);
+        res.status(201).json({ token, expiresAt, email: user.email });
+    } catch (error) {
+        console.error('adminCreatePasswordResetLink:', error);
+        res.status(500).json({ error: 'Errore nella generazione del link' });
+    }
+};
+
+// POST /admin/onboarding-admin (superuser) { societaId, email, nome, cognome, telefono }
+// Crea l'amministratore di una nuova società senza password utilizzabile e ritorna
+// il link per impostarla, in un'unica transazione.
+exports.adminOnboardAdmin = async (req, res) => {
+    const { societaId, email, nome, cognome, telefono } = req.body || {};
+    const parsedSocietaId = parseInt(societaId, 10);
+    if (!parsedSocietaId || !email) {
+        return res.status(400).json({ error: 'societaId ed email sono obbligatori' });
+    }
+    try {
+        // Solo trim: il login confronta l'email così com'è salvata (come adminCreateUser).
+        const normalizedEmail = String(email).trim();
+        const existing = await User.findOne({ where: { email: normalizedEmail, societaId: parsedSocietaId } });
+        if (existing) return res.status(400).json({ error: 'Email già in uso in questa società' });
+
+        const result = await sequelize.transaction(async (transaction) => {
+            const user = await User.create({
+                email: normalizedEmail,
+                password: generateUnusablePassword(),
+                nome: nome || null,
+                cognome: cognome || null,
+                telefono: telefono || null,
+                role: 'admin',
+                attivo: true,
+                societaId: parsedSocietaId,
+            }, { transaction });
+            const link = await createResetToken(PasswordResetToken, user.id, req.user.id, transaction);
+            return { user, ...link };
+        });
+        const { password: _, ...safe } = result.user.toJSON();
+        res.status(201).json({ user: safe, token: result.token, expiresAt: result.expiresAt });
+    } catch (error) {
+        res.status(400).json({ error: formatErrorMessage(error) });
+    }
+};
+
+// POST /password-reset/verify { token } (pubblico) → { email, expiresAt }
+exports.verifyPasswordReset = async (req, res) => {
+    try {
+        const record = await findValidToken(PasswordResetToken, req.body?.token);
+        if (!record) return res.status(400).json({ error: INVALID_LINK_ERROR });
+        const user = await User.findByPk(record.userId, { attributes: ['email', 'attivo'] });
+        if (!user || user.attivo === false) return res.status(400).json({ error: INVALID_LINK_ERROR });
+        res.json({ email: user.email, expiresAt: record.expiresAt });
+    } catch (error) {
+        console.error('verifyPasswordReset:', error);
+        res.status(500).json({ error: 'Errore interno' });
+    }
+};
+
+// POST /password-reset { token, password } (pubblico)
+// Imposta la password, consuma il token (monouso), invalida gli altri token
+// dell'utente e revoca le sessioni aperte.
+exports.completePasswordReset = async (req, res) => {
+    const { token, password } = req.body || {};
+    try {
+        validatePasswordOrThrow(password);
+    } catch (error) {
+        return res.status(400).json({ error: formatErrorMessage(error) });
+    }
+    try {
+        const email = await sequelize.transaction(async (transaction) => {
+            // Lock della riga: due richieste concorrenti con lo stesso token non
+            // possono entrambe impostare la password.
+            const record = await findValidToken(PasswordResetToken, token, { transaction, lock: transaction.LOCK.UPDATE });
+            if (!record) return null;
+            const user = await User.findByPk(record.userId, { transaction });
+            if (!user || user.attivo === false) return null;
+
+            const now = new Date();
+            user.password = password;
+            user.sessions_revoked_at = now;
+            await user.save({ transaction });
+            record.usedAt = now;
+            await record.save({ transaction });
+            await PasswordResetToken.destroy({
+                where: { userId: user.id, usedAt: null },
+                transaction,
+            });
+            return user.email;
+        });
+        if (!email) return res.status(400).json({ error: INVALID_LINK_ERROR });
+        res.json({ ok: true, email });
+    } catch (error) {
+        console.error('completePasswordReset:', error);
+        res.status(400).json({ error: formatErrorMessage(error) });
     }
 };

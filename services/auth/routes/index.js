@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const authController = require('../controllers/authController');
 const authenticateToken = require('../middleware/auth');
-const { requireAdmin } = require('../middleware/auth');
+const { requireAdmin, requireSuperuser } = require('../middleware/auth');
 const requireInternal = require('../middleware/requireInternal');
 
 router.get('/health', (req, res) => {
@@ -15,6 +15,9 @@ router.get('/internal/admin-emails', requireInternal, authController.internalAdm
 router.post('/register', authController.register);
 router.post('/login', authController.login);
 router.post('/refresh-token', authController.refreshToken);
+// Impostazione password tramite link monouso (pubblico: il token è nel body)
+router.post('/password-reset/verify', authController.verifyPasswordReset);
+router.post('/password-reset', authController.completePasswordReset);
 router.get('/me', authenticateToken, authController.me);
 router.put('/me', authenticateToken, authController.updateProfile);
 router.post('/switch-societa', authenticateToken, authController.switchSocieta);
@@ -31,6 +34,10 @@ router.put('/admin/users/:id/comunicazioni', authenticateToken, requireAdmin, au
 router.delete('/admin/users/:id', authenticateToken, requireAdmin, authController.adminDeleteUser);
 router.post('/admin/users/:id/impersonate', authenticateToken, requireAdmin, authController.adminImpersonate);
 router.get('/admin/users/:id/features', authenticateToken, requireAdmin, authController.adminGetUserFeatures);
+
+// Backoffice (solo superuser): onboarding amministratore e link reset password
+router.post('/admin/onboarding-admin', authenticateToken, requireSuperuser, authController.adminOnboardAdmin);
+router.post('/admin/users/:id/password-reset-link', authenticateToken, requireSuperuser, authController.adminCreatePasswordResetLink);
 router.put('/admin/users/:id/features', authenticateToken, requireAdmin, authController.adminSetUserFeatures);
 
 // Accesso frontend soci (solo admin)
