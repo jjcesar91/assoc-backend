@@ -3,6 +3,8 @@ const router = express.Router();
 const socioRoutes = require('./socioRoutes');
 const societaRoutes = require('./societaRoutes');
 const automazioneRoutes = require('./automazioneRoutes');
+const piattaformaRoutes = require('./piattaformaRoutes');
+const piattaformaController = require('../controllers/piattaformaController');
 const authenticateToken = require('../middleware/auth');
 const requireInternal = require('../middleware/requireInternal');
 const InternalController = require('../controllers/internalController');
@@ -24,10 +26,13 @@ router.get('/public/soci', socioController.lookupPublicSocio);
 router.post('/public/soci', socioController.getOrCreatePublicSocio);
 // Installa sul browser corrente il cookie-certificato (aperto dal file scaricato in Configurazione).
 router.get('/public/rt-certificato/installa', certificatoController.installaCertificato);
+// Personalizzazione dell'ambiente (nome, colori, logo): serve già alla pagina di login.
+router.get('/public/piattaforma', piattaformaController.getPublic);
 
 router.use(authenticateToken);
 router.use('/soci', socioRoutes);
 router.use('/societa', societaRoutes);
 router.use('/automazioni', automazioneRoutes);
+router.use('/piattaforma', piattaformaRoutes); // solo superuser
 
 module.exports = router;
