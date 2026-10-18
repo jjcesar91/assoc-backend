@@ -159,6 +159,7 @@ async function main() {
   await auth.connect();
   console.log('=== auth_db ===');
   await reportCount(auth, '"Users" (credenziali login)', 'SELECT COUNT(*) n FROM "Users" WHERE "societaId" = ANY($1::int[])', [societaIds]);
+  await reportCount(auth, 'password_reset_tokens', 'SELECT COUNT(*) n FROM password_reset_tokens WHERE "userId" IN (SELECT id FROM "Users" WHERE "societaId" = ANY($1::int[]))', [societaIds]);
   console.log('');
 
   const payments = makeClient('payments');
@@ -262,6 +263,7 @@ async function main() {
   ]);
 
   await runDeletes(auth, 'auth_db', [
+    { sql: 'DELETE FROM password_reset_tokens WHERE "userId" IN (SELECT id FROM "Users" WHERE "societaId" = ANY($1::int[]))', params: [societaIds], desc: 'password_reset_tokens' },
     { sql: 'DELETE FROM "Users" WHERE "societaId" = ANY($1::int[])', params: [societaIds], desc: '"Users"' },
   ]);
 
