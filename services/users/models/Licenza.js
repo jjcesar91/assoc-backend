@@ -18,8 +18,8 @@ module.exports = (sequelize, DataTypes) => {
         stato: {
             type: DataTypes.STRING(20),
             allowNull: false,
-            defaultValue: 'attiva',
-            // in_attesa = registrata dal sito, da attivare dal Backoffice
+            defaultValue: 'in_attesa',
+            // in_attesa = nuova licenza (sito o Backoffice), da attivare dal Backoffice
             validate: { isIn: [['attiva', 'in_attesa', 'sospesa', 'scaduta']] }
         },
         data_inizio: {

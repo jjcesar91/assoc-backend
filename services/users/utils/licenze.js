@@ -33,10 +33,13 @@ const toDateOnly = (d) => (d ? new Date(d).toISOString().slice(0, 10) : null);
 
 // Licenza di una società. Se la società non ne ha ancora una:
 //  - modello precedente (licenza 1:1 con societa_id) → la collega;
-//  - altrimenti apre una nuova licenza Free attiva di cui è la società di registrazione.
+//  - altrimenti apre una nuova licenza di cui è la società di registrazione:
+//      nuova: true  → società appena creata: piano Free, in attesa di attivazione;
+//      default      → società già esistente senza licenza (backfill, clienti
+//                     precedenti ai piani): Advanced, attiva.
 async function ensureLicenzaForSocieta(models, societa, options = {}) {
     const { Licenza, SocietaAffiliazioni } = models;
-    const { transaction } = options;
+    const { transaction, nuova = false } = options;
     if (societa.licenza_id) {
         const own = await Licenza.findByPk(societa.licenza_id, { transaction });
         if (own) return own;
@@ -46,9 +49,9 @@ async function ensureLicenzaForSocieta(models, societa, options = {}) {
         const affiliazioni = await SocietaAffiliazioni.findAll({ where: { societa_id: societa.id }, transaction });
         licenza = await Licenza.create({
             societa_id: societa.id,
-            piano: 'free',
-            stato: 'attiva',
-            data_inizio: toDateOnly(societa.createdAt) || toDateOnly(new Date()),
+            piano: nuova ? 'free' : 'advanced',
+            stato: nuova ? 'in_attesa' : 'attiva',
+            data_inizio: nuova ? null : (toDateOnly(societa.createdAt) || toDateOnly(new Date())),
             ...snapshotFromSocieta(societa, affiliazioni),
         }, { transaction });
     }
@@ -58,7 +61,8 @@ async function ensureLicenzaForSocieta(models, societa, options = {}) {
     return licenza;
 }
 
-// All'avvio: ogni società senza licenza viene collegata alla propria (o ne riceve una Free).
+// All'avvio: ogni società senza licenza viene collegata alla propria o ne riceve
+// una Advanced attiva (società esistenti prima dell'introduzione delle licenze).
 async function backfillLicenze(models) {
     const { Societa } = models;
     const missing = await Societa.findAll({ where: { licenza_id: { [Op.is]: null } } });

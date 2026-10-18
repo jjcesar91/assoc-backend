@@ -97,10 +97,11 @@ class SocietaController {
             const societa = await Societa.create({ ...societaData, licenza_id: licenzaId });
             await createSocietaDefaults(societa, req.headers.authorization);
 
-            // Nessuna licenza indicata: la società apre la propria licenza (Free).
+            // Nessuna licenza indicata: la società apre una nuova licenza, Free e in
+            // attesa di attivazione dal Backoffice.
             if (!licenzaId) {
                 try {
-                    await ensureLicenzaForSocieta(models, societa);
+                    await ensureLicenzaForSocieta(models, societa, { nuova: true });
                 } catch (licenzaError) {
                     console.error('Error creating default licenza:', licenzaError);
                 }
