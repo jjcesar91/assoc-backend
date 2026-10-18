@@ -4,6 +4,7 @@ const socioRoutes = require('./socioRoutes');
 const societaRoutes = require('./societaRoutes');
 const automazioneRoutes = require('./automazioneRoutes');
 const piattaformaRoutes = require('./piattaformaRoutes');
+const licenzeRoutes = require('./licenzeRoutes');
 const piattaformaController = require('../controllers/piattaformaController');
 const authenticateToken = require('../middleware/auth');
 const requireInternal = require('../middleware/requireInternal');
@@ -34,5 +35,6 @@ router.use('/soci', socioRoutes);
 router.use('/societa', societaRoutes);
 router.use('/automazioni', automazioneRoutes);
 router.use('/piattaforma', piattaformaRoutes); // solo superuser
+router.use('/licenze', licenzeRoutes); // solo superuser
 
 module.exports = router;

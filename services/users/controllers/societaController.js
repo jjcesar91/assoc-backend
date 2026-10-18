@@ -1,5 +1,7 @@
 const { Op } = require('sequelize');
-const { Societa, SocietaAffiliazioni } = require('../models');
+const models = require('../models');
+const { Societa, SocietaAffiliazioni } = models;
+const { ensureLicenza } = require('../utils/licenze');
 const { cookieName, certificatoValido } = require('../utils/rtCertificato');
 
 const getUserScope = (req) => {
@@ -164,6 +166,14 @@ class SocietaController {
                      console.error('Error creating default ASD groups:', gruppiError);
                  }
              }
+
+            // Licenza della nuova società: piano Free, dati di registrazione
+            // precompilati dall'anagrafica appena creata.
+            try {
+                await ensureLicenza(models, societa);
+            } catch (licenzaError) {
+                console.error('Error creating default licenza:', licenzaError);
+            }
 
             return res.status(201).json(societa);
         } catch (error) {

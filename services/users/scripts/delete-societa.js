@@ -149,6 +149,7 @@ async function main() {
   await reportCount(users, 'users (secondario, orfani)', 'SELECT COUNT(*) n FROM users WHERE id = ANY($1::int[])', [orphanUserIds]);
   await reportCount(users, 'automazioni_config', 'SELECT COUNT(*) n FROM automazioni_config WHERE societa_id = ANY($1::int[])', [societaIds]);
   await reportCount(users, '"SocietaAffiliazioni"', 'SELECT COUNT(*) n FROM "SocietaAffiliazioni" WHERE societa_id = ANY($1::int[])', [societaIds]);
+  await reportCount(users, 'licenze', 'SELECT COUNT(*) n FROM licenze WHERE societa_id = ANY($1::int[])', [societaIds]);
   console.log('  societa: ' + societaIds.length);
   console.log('');
 
@@ -272,6 +273,7 @@ async function main() {
     { sql: 'DELETE FROM users WHERE id = ANY($1::int[])', params: [orphanUserIds], desc: 'users (secondario)' },
     { sql: 'DELETE FROM automazioni_config WHERE societa_id = ANY($1::int[])', params: [societaIds], desc: 'automazioni_config' },
     { sql: 'DELETE FROM "SocietaAffiliazioni" WHERE societa_id = ANY($1::int[])', params: [societaIds], desc: '"SocietaAffiliazioni"' },
+    { sql: 'DELETE FROM licenze WHERE societa_id = ANY($1::int[])', params: [societaIds], desc: 'licenze' },
     { sql: 'DELETE FROM societa WHERE id = ANY($1::int[])', params: [societaIds], desc: 'societa' },
   ]);
 

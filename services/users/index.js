@@ -3,6 +3,7 @@ const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const cron = require('node-cron');
 const db = require('./models');
+const { backfillLicenze } = require('./utils/licenze');
 const routes = require('./routes');
 const { runAutomazioniCheck } = require('./jobs/runAutomazioni');
 require('dotenv').config();
@@ -54,8 +55,14 @@ db.sequelize.authenticate()
     }
     return db.sequelize.sync({ alter: true });
   })
-  .then(() => {
+  .then(async () => {
     console.log('Database connected and synced successfully.');
+    // Ogni società deve avere una licenza (piano Free di default)
+    try {
+      await backfillLicenze(db);
+    } catch (err) {
+      console.error('[licenze] backfill fallito:', err);
+    }
     app.listen(PORT, () => {
       console.log(`Server is running on port ${PORT}`);
     });

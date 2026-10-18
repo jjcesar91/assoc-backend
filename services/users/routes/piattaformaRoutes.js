@@ -5,14 +5,9 @@ const fs = require('fs');
 const crypto = require('crypto');
 const piattaformaController = require('../controllers/piattaformaController');
 
-const router = express.Router();
+const requireSuperuser = require('../middleware/requireSuperuser');
 
-const requireSuperuser = (req, res, next) => {
-    if (req.user?.role !== 'superuser') {
-        return res.status(403).json({ error: 'Accesso riservato ai superuser' });
-    }
-    next();
-};
+const router = express.Router();
 
 // Solo immagini raster/ico: niente SVG, che servito dalla stessa origine
 // dell'app potrebbe contenere script.
