@@ -1,5 +1,6 @@
 const { Gruppo, PaymentVoceConfig, Payment } = require('../models');
 const { Op } = require('sequelize');
+const { getLicenzaLimiti, esente, limiteError } = require('../utils/licenzaLimiti');
 
 function productsUrl() {
     return process.env.PRODUCTS_SERVICE_URL || 'http://products_ms:3000';
@@ -194,6 +195,12 @@ exports.getTotali = async (req, res) => {
     try {
         const { societa_id, data_da, data_a } = req.query;
         if (!societa_id) return res.status(400).json({ error: 'societa_id obbligatorio' });
+        if (!esente(req)) {
+            const ctx = await getLicenzaLimiti(societa_id);
+            if (ctx?.limiti && ctx.limiti.bilancio === false) {
+                return limiteError(res, `Il Bilancio non è incluso nel piano ${ctx.piano_nome}.`);
+            }
+        }
 
         const headers = req.headers['authorization'] ? { Authorization: req.headers['authorization'] } : {};
         const productsRes = await fetch(`${productsUrl()}/api?societaId=${encodeURIComponent(societa_id)}`, { headers });
@@ -351,6 +358,13 @@ exports.initAsd = async (req, res) => {
 exports.create = async (req, res) => {
     try {
         const { societa_id, codice } = req.body;
+        // Piano senza gruppi personalizzati: si usano solo quelli di default
+        if (!esente(req)) {
+            const ctx = await getLicenzaLimiti(societa_id);
+            if (ctx?.limiti && ctx.limiti.gruppi_personalizzati === false) {
+                return limiteError(res, `Il piano ${ctx.piano_nome} consente solo i gruppi e sottogruppi predefiniti.`);
+            }
+        }
         if (codice && societa_id) {
             const existing = await Gruppo.findOne({ where: { societa_id, codice } });
             if (existing) {

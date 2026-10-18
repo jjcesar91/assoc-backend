@@ -1,9 +1,24 @@
 const { Modulo } = require('../models');
+const { getLicenzaLimiti, esente, limiteError } = require('../utils/licenzaLimiti');
 
 module.exports = {
   async create(req, res) {
     try {
       const isArray = Array.isArray(req.body);
+
+      // Limite di moduli per società del piano della licenza
+      if (!esente(req)) {
+        const nuovi = isArray ? req.body : [req.body];
+        const perSocieta = {};
+        nuovi.forEach(m => { perSocieta[m?.societa_id] = (perSocieta[m?.societa_id] || 0) + 1; });
+        for (const [societaId, quanti] of Object.entries(perSocieta)) {
+          const ctx = await getLicenzaLimiti(societaId);
+          const max = ctx?.limiti?.max_moduli;
+          if (max != null && (await Modulo.count({ where: { societa_id: societaId } })) + quanti > max) {
+            return limiteError(res, `Il piano ${ctx.piano_nome} consente al massimo ${max} moduli. Per aggiungerne altri passa a un piano superiore.`);
+          }
+        }
+      }
       
       if (isArray) {
         // Bulk create

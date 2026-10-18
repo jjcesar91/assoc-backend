@@ -1,6 +1,7 @@
 const { Op } = require('sequelize');
 const models = require('../models');
 const { toDateOnly } = require('../utils/licenze');
+const { getLicenzaContext, contaSociLicenza } = require('../utils/licenzaContext');
 
 const { Licenza, Societa } = models;
 
@@ -121,7 +122,49 @@ module.exports = {
         }
     },
 
+    // GET /licenza-corrente?societaId= — piano, limiti e utilizzo per la società
+    // attiva (o una delle società consentite) dell'utente. bypass = superuser.
+    async corrente(req, res) {
+        try {
+            const role = req.user?.role;
+            const tokenSocieta = Number.isInteger(req.user?.societaId) ? req.user.societaId : null;
+            const consentite = Array.isArray(req.user?.societaIds) ? req.user.societaIds : [];
+            const societaId = req.query.societaId ? parseInt(req.query.societaId, 10) : tokenSocieta;
+            if (!societaId) return res.json(null);
+            if (role !== 'superuser' && societaId !== tokenSocieta && !consentite.includes(societaId)) {
+                return res.status(403).json({ error: 'Società non consentita' });
+            }
+            const ctx = await getLicenzaContext(models, societaId);
+            if (!ctx) return res.json(null);
+            const soci = await contaSociLicenza(models, ctx.societaIds);
+            return res.json({
+                licenza_id: ctx.licenza_id,
+                piano: ctx.piano,
+                piano_nome: ctx.piano_nome,
+                stato: ctx.stato,
+                limiti: ctx.limiti,
+                utilizzo: { soci },
+                bypass: role === 'superuser',
+            });
+        } catch (error) {
+            console.error('Errore licenza corrente:', error);
+            return res.status(500).json({ error: 'Errore lettura licenza' });
+        }
+    },
+
     // --- Interni (service-to-service, x-internal-secret) -----------------------
+
+    // GET /internal/licenza-limiti?societaId= → { licenza_id, piano, piano_nome, stato, limiti, societaIds }
+    async internalLimiti(req, res) {
+        try {
+            const societaId = parseInt(req.query.societaId, 10);
+            if (!Number.isInteger(societaId)) return res.json(null);
+            return res.json(await getLicenzaContext(models, societaId));
+        } catch (error) {
+            console.error('Errore limiti licenza (interno):', error);
+            return res.status(500).json({ error: 'Errore lettura licenza' });
+        }
+    },
 
     // GET /internal/licenze-stato?societaIds=1,2 → { "1": { licenza_id, stato } }
     // Usato da auth per consentire l'accesso al gestionale solo con licenza attiva.

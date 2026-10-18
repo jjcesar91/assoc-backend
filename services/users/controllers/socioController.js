@@ -4,6 +4,19 @@ const path = require('path');
 const { Op } = require('sequelize');
 const { sendEmail } = require('../utils/mailService');
 const { cookieName, certificatoValido } = require('../utils/rtCertificato');
+const models = require('../models');
+const { getLicenzaContext, contaSociLicenza, limiteError } = require('../utils/licenzaContext');
+
+// Limite di soci del piano della licenza (somma di tutte le sue società).
+// Ritorna il messaggio d'errore se il limite è raggiunto, altrimenti null.
+async function verificaLimiteSoci(societaId) {
+    const ctx = await getLicenzaContext(models, societaId);
+    const max = ctx?.limiti?.max_soci;
+    if (max == null) return null;
+    const n = await contaSociLicenza(models, ctx.societaIds);
+    if (n < max) return null;
+    return `Hai raggiunto il limite di ${max} soci del piano ${ctx.piano_nome}. Per aggiungerne altri passa a un piano superiore.`;
+}
 
 // Helper to calculate fiscal year
 function calculateAnnoContabile(date, societa) {
@@ -212,6 +225,11 @@ class SocioController {
                 }
             });
 
+            if (req.user?.role !== 'superuser') {
+                const limite = await verificaLimiteSoci(socioData.societa_id);
+                if (limite) return limiteError(res, limite);
+            }
+
             const socio = await Socio.create(socioData);
             return res.status(201).json(socio);
         } catch (error) {
@@ -314,6 +332,9 @@ class SocioController {
                 if (!anagraficaData.luogo_nascita) delete anagraficaData.luogo_nascita;
                 await socio.update(anagraficaData);
             } else {
+                // Pagina pubblica: il nuovo socio conta nel limite del piano
+                const limite = await verificaLimiteSoci(societa_id);
+                if (limite) return limiteError(res, 'Al momento non è possibile registrare nuovi soci online. Contatta l\'associazione.');
                 socio = await Socio.create({
                     societa_id,
                     codice_fiscale: cf,

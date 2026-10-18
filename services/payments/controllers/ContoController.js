@@ -1,5 +1,6 @@
 const { Op } = require('sequelize');
 const { Conto, sequelize } = require('../models');
+const { getLicenzaLimiti, esente, limiteError } = require('../utils/licenzaLimiti');
 
 // Normalizza il payload in arrivo dal client: l'API pubblica usa il nome
 // "modalita_pagamento" (array), che qui rinominiamo verso l'attributo interno
@@ -65,7 +66,15 @@ exports.getBySocieta = async (req, res) => {
 
 exports.create = async (req, res) => {
     try {
-        const record = await Conto.create(sanitize(req.body));
+        const data = sanitize(req.body);
+        if (!esente(req)) {
+            const ctx = await getLicenzaLimiti(data.societa_id);
+            const max = ctx?.limiti?.max_conti;
+            if (max != null && await Conto.count({ where: { societa_id: data.societa_id } }) >= max) {
+                return limiteError(res, `Il piano ${ctx.piano_nome} consente al massimo ${max} conti. Per aggiungerne altri passa a un piano superiore.`);
+            }
+        }
+        const record = await Conto.create(data);
         res.status(201).json(toPublicJson(record));
     } catch (error) {
         console.error(error);

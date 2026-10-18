@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const { Payment, Conto, RicevutaToken } = require('../models');
+const { getLicenzaLimiti, limiteError } = require('../utils/licenzaLimiti');
 const { findQuotaAssociativaPagata } = require('./PaymentController');
 
 // Ordini creati dal socio nella propria area riservata ("frontend socio").
@@ -177,6 +178,13 @@ const SocioOrdineController = {
 
             const catalogo = await fetchCatalogoOnline(ctx.societaId, req.headers['authorization']);
             const byId = new Map(catalogo.map(p => [String(p.id), p]));
+
+            // Piano senza ordini di prodotti generici dallo shop
+            const licenza = await getLicenzaLimiti(ctx.societaId);
+            if (licenza?.limiti && licenza.limiti.ordini_prodotti_generici === false
+                && items.some(raw => byId.get(String(raw?.product_id))?.type === 'generic')) {
+                return limiteError(res, 'Questo prodotto non è ordinabile online: contatta l\'associazione.');
+            }
 
             const paymentItems = [];
             const quoteParts = [];

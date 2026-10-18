@@ -23,6 +23,7 @@ router.get('/health', (req, res) => {
 router.post('/internal/ricevuta-uploaded', requireInternal, InternalController.ricevutaUploaded);
 router.get('/internal/licenze-stato', requireInternal, licenzeController.internalStato);
 router.get('/internal/societa-licenze', requireInternal, licenzeController.internalSocietaLicenze);
+router.get('/internal/licenza-limiti', requireInternal, licenzeController.internalLimiti);
 
 // --- Rotte PUBBLICHE (senza autenticazione) — pagina /ricevuta-telematica/:societaId ---
 // Devono stare PRIMA di router.use(authenticateToken).
@@ -42,5 +43,7 @@ router.use('/societa', societaRoutes);
 router.use('/automazioni', automazioneRoutes);
 router.use('/piattaforma', piattaformaRoutes); // solo superuser
 router.use('/licenze', licenzeRoutes); // solo superuser
+// Piano e limiti della licenza della società corrente (tutti gli utenti autenticati)
+router.get('/licenza-corrente', licenzeController.corrente);
 
 module.exports = router;

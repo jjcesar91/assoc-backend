@@ -6,6 +6,7 @@ const {
     generateUnusablePassword,
 } = require('../utils/passwordReset');
 const { filtraSocietaAttive } = require('../utils/licenze');
+const { getLicenzaLimiti } = require('../utils/licenzaLimiti');
 
 // Password per persona: la stessa email ha una riga per ogni società in cui
 // lavora (gestionale). Quando la persona cambia o reimposta la password, l'hash
@@ -456,6 +457,13 @@ exports.adminCreateUser = async (req, res) => {
             return res.status(400).json({ error: 'societaId è obbligatorio per utenti non-superuser' });
         }
         validatePasswordOrThrow(password);
+        // Piano senza creazione utenti: resta solo l'amministratore della licenza
+        if (req.user?.role !== 'superuser' && effectiveSocietaId) {
+            const ctx = await getLicenzaLimiti(effectiveSocietaId);
+            if (ctx?.limiti && ctx.limiti.creazione_utenti === false) {
+                return res.status(403).json({ error: `Il piano ${ctx.piano_nome} non consente di creare altri utenti.`, code: 'LIMITE_PIANO' });
+            }
+        }
         // Unicità email solo all'interno della stessa società.
         const existingEmail = await User.findOne({ where: { email, societaId: effectiveSocietaId } });
         if (existingEmail) return res.status(400).json({ error: 'Email già in uso in questa società' });
