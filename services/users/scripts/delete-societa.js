@@ -149,7 +149,9 @@ async function main() {
   await reportCount(users, 'users (secondario, orfani)', 'SELECT COUNT(*) n FROM users WHERE id = ANY($1::int[])', [orphanUserIds]);
   await reportCount(users, 'automazioni_config', 'SELECT COUNT(*) n FROM automazioni_config WHERE societa_id = ANY($1::int[])', [societaIds]);
   await reportCount(users, '"SocietaAffiliazioni"', 'SELECT COUNT(*) n FROM "SocietaAffiliazioni" WHERE societa_id = ANY($1::int[])', [societaIds]);
-  await reportCount(users, 'licenze', 'SELECT COUNT(*) n FROM licenze WHERE societa_id = ANY($1::int[])', [societaIds]);
+  await reportCount(users, 'licenze (eliminate: tutte le loro società sono in cancellazione)', `SELECT COUNT(*) n FROM licenze l
+    WHERE l.id IN (SELECT licenza_id FROM societa WHERE id = ANY($1::int[]))
+      AND NOT EXISTS (SELECT 1 FROM societa s2 WHERE s2.licenza_id = l.id AND NOT (s2.id = ANY($1::int[])))`, [societaIds]);
   console.log('  societa: ' + societaIds.length);
   console.log('');
 
@@ -273,7 +275,14 @@ async function main() {
     { sql: 'DELETE FROM users WHERE id = ANY($1::int[])', params: [orphanUserIds], desc: 'users (secondario)' },
     { sql: 'DELETE FROM automazioni_config WHERE societa_id = ANY($1::int[])', params: [societaIds], desc: 'automazioni_config' },
     { sql: 'DELETE FROM "SocietaAffiliazioni" WHERE societa_id = ANY($1::int[])', params: [societaIds], desc: '"SocietaAffiliazioni"' },
-    { sql: 'DELETE FROM licenze WHERE societa_id = ANY($1::int[])', params: [societaIds], desc: 'licenze' },
+    // Licenze: eliminate solo se perdono tutte le società; altrimenti la società di
+    // registrazione passa a una di quelle rimaste.
+    { sql: `UPDATE licenze l SET societa_id = (SELECT MIN(s2.id) FROM societa s2 WHERE s2.licenza_id = l.id AND NOT (s2.id = ANY($1::int[])))
+            WHERE l.societa_id = ANY($1::int[])
+              AND EXISTS (SELECT 1 FROM societa s2 WHERE s2.licenza_id = l.id AND NOT (s2.id = ANY($1::int[])))`, params: [societaIds], desc: 'licenze (società di registrazione riassegnata)' },
+    { sql: `DELETE FROM licenze l
+            WHERE l.id IN (SELECT licenza_id FROM societa WHERE id = ANY($1::int[]))
+              AND NOT EXISTS (SELECT 1 FROM societa s2 WHERE s2.licenza_id = l.id AND NOT (s2.id = ANY($1::int[])))`, params: [societaIds], desc: 'licenze' },
     { sql: 'DELETE FROM societa WHERE id = ANY($1::int[])', params: [societaIds], desc: 'societa' },
   ]);
 

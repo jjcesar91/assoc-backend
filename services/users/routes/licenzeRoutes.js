@@ -7,7 +7,7 @@ const router = express.Router();
 // Montato su /licenze dopo authenticateToken: solo superuser (Backoffice)
 router.use(requireSuperuser);
 router.get('/', licenzeController.list);
-router.get('/:societaId', licenzeController.get);
-router.put('/:societaId', licenzeController.update);
+router.get('/:id', licenzeController.get);
+router.put('/:id', licenzeController.update);
 
 module.exports = router;

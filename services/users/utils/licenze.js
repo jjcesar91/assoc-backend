@@ -31,34 +31,41 @@ function snapshotFromSocieta(societa, affiliazioni = []) {
 
 const toDateOnly = (d) => (d ? new Date(d).toISOString().slice(0, 10) : null);
 
-// Crea la licenza (piano Free, attiva) per la società se non esiste ancora.
-async function ensureLicenza(models, societa, options = {}) {
+// Licenza di una società. Se la società non ne ha ancora una:
+//  - modello precedente (licenza 1:1 con societa_id) → la collega;
+//  - altrimenti apre una nuova licenza Free attiva di cui è la società di registrazione.
+async function ensureLicenzaForSocieta(models, societa, options = {}) {
     const { Licenza, SocietaAffiliazioni } = models;
-    const existing = await Licenza.findOne({ where: { societa_id: societa.id }, transaction: options.transaction });
-    if (existing) return existing;
-    const affiliazioni = SocietaAffiliazioni
-        ? await SocietaAffiliazioni.findAll({ where: { societa_id: societa.id }, transaction: options.transaction })
-        : [];
-    return Licenza.create({
-        societa_id: societa.id,
-        piano: 'free',
-        stato: 'attiva',
-        data_inizio: toDateOnly(societa.createdAt) || toDateOnly(new Date()),
-        ...snapshotFromSocieta(societa, affiliazioni),
-    }, { transaction: options.transaction });
-}
-
-// All'avvio: ogni società senza licenza riceve una licenza Free.
-async function backfillLicenze(models) {
-    const { Societa, Licenza } = models;
-    const withLicenza = (await Licenza.findAll({ attributes: ['societa_id'] })).map(l => l.societa_id);
-    const missing = await Societa.findAll({
-        where: withLicenza.length ? { id: { [Op.notIn]: withLicenza } } : undefined,
-    });
-    for (const societa of missing) {
-        await ensureLicenza(models, societa);
+    const { transaction } = options;
+    if (societa.licenza_id) {
+        const own = await Licenza.findByPk(societa.licenza_id, { transaction });
+        if (own) return own;
     }
-    if (missing.length) console.log(`[licenze] create ${missing.length} licenze Free per società esistenti`);
+    let licenza = await Licenza.findOne({ where: { societa_id: societa.id }, transaction });
+    if (!licenza) {
+        const affiliazioni = await SocietaAffiliazioni.findAll({ where: { societa_id: societa.id }, transaction });
+        licenza = await Licenza.create({
+            societa_id: societa.id,
+            piano: 'free',
+            stato: 'attiva',
+            data_inizio: toDateOnly(societa.createdAt) || toDateOnly(new Date()),
+            ...snapshotFromSocieta(societa, affiliazioni),
+        }, { transaction });
+    }
+    if (societa.licenza_id !== licenza.id) {
+        await societa.update({ licenza_id: licenza.id }, { transaction });
+    }
+    return licenza;
 }
 
-module.exports = { snapshotFromSocieta, ensureLicenza, backfillLicenze };
+// All'avvio: ogni società senza licenza viene collegata alla propria (o ne riceve una Free).
+async function backfillLicenze(models) {
+    const { Societa } = models;
+    const missing = await Societa.findAll({ where: { licenza_id: { [Op.is]: null } } });
+    for (const societa of missing) {
+        await ensureLicenzaForSocieta(models, societa);
+    }
+    if (missing.length) console.log(`[licenze] collegate ${missing.length} società alla propria licenza`);
+}
+
+module.exports = { snapshotFromSocieta, ensureLicenzaForSocieta, backfillLicenze, toDateOnly };

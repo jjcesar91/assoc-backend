@@ -22,6 +22,10 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.STRING,
       allowNull: false
     },
+    licenza_id: {
+      type: DataTypes.INTEGER,
+      allowNull: true // licenza a cui appartiene la società (una licenza può avere più società)
+    },
     codice_fiscale: {
       type: DataTypes.STRING,
       allowNull: false

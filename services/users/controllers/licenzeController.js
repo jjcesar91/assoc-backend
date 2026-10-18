@@ -1,10 +1,11 @@
+const { Op } = require('sequelize');
 const models = require('../models');
-const { ensureLicenza } = require('../utils/licenze');
+const { toDateOnly } = require('../utils/licenze');
 
 const { Licenza, Societa } = models;
 
 const PIANI = ['free', 'pro', 'advanced'];
-const STATI = ['attiva', 'sospesa', 'scaduta'];
+const STATI = ['attiva', 'in_attesa', 'sospesa', 'scaduta'];
 const ANNI = ['solare', 'sportivo', 'personalizzato'];
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 const GG_MM = /^\d{2}-\d{2}$/;
@@ -16,34 +17,53 @@ const TEXT_FIELDS = {
     referente_nome: 255, referente_telefono: 50, note: 5000,
 };
 
+const SOCIETA_ATTRS = ['id', 'denominazione', 'tipo_associazione', 'codice_fiscale', 'email', 'comune', 'createdAt'];
+
 module.exports = {
-    // GET /licenze — riepilogo per l'elenco Iscrizioni
+    // GET /licenze — elenco per Backoffice → Licenze (con le società di ognuna)
     async list(req, res) {
         try {
-            const licenze = await Licenza.findAll({
-                attributes: ['societa_id', 'piano', 'stato', 'data_inizio', 'data_scadenza'],
-            });
-            return res.json(licenze);
+            const [licenze, societa] = await Promise.all([
+                Licenza.findAll({ order: [['createdAt', 'DESC']] }),
+                Societa.findAll({ where: { licenza_id: { [Op.ne]: null } }, attributes: ['id', 'licenza_id', 'denominazione'] }),
+            ]);
+            const byLicenza = {};
+            societa.forEach(s => { (byLicenza[s.licenza_id] = byLicenza[s.licenza_id] || []).push({ id: s.id, denominazione: s.denominazione }); });
+            return res.json(licenze.map(l => ({
+                id: l.id,
+                nome: l.associazione,
+                piano: l.piano,
+                stato: l.stato,
+                data_inizio: l.data_inizio,
+                data_scadenza: l.data_scadenza,
+                createdAt: l.createdAt,
+                societa_registrazione_id: l.societa_id,
+                societa: byLicenza[l.id] || [],
+            })));
         } catch (error) {
             console.error('Errore elenco licenze:', error);
             return res.status(500).json({ error: 'Errore lettura licenze' });
         }
     },
 
-    // GET /licenze/:societaId — licenza completa (creata Free se mancante)
+    // GET /licenze/:id — licenza completa con le sue società
     async get(req, res) {
         try {
-            const societa = await Societa.findByPk(req.params.societaId);
-            if (!societa) return res.status(404).json({ error: 'Società non trovata' });
-            const licenza = await ensureLicenza(models, societa);
-            return res.json(licenza);
+            const licenza = await Licenza.findByPk(req.params.id);
+            if (!licenza) return res.status(404).json({ error: 'Licenza non trovata' });
+            const societa = await Societa.findAll({
+                where: { licenza_id: licenza.id },
+                attributes: SOCIETA_ATTRS,
+                order: [['createdAt', 'ASC']],
+            });
+            return res.json({ ...licenza.toJSON(), societa });
         } catch (error) {
             console.error('Errore lettura licenza:', error);
             return res.status(500).json({ error: 'Errore lettura licenza' });
         }
     },
 
-    // PUT /licenze/:societaId — aggiorna piano, stato, date e dati di registrazione
+    // PUT /licenze/:id — piano, stato, date, note e dati di registrazione
     async update(req, res) {
         try {
             const body = req.body || {};
@@ -67,8 +87,9 @@ module.exports = {
                 const v = body.anno_associativo_tipo || null;
                 if (v !== null && !ANNI.includes(v)) return res.status(400).json({ error: 'Anno associativo non valido' });
                 updates.anno_associativo_tipo = v;
+                if (v !== 'personalizzato') updates.anno_associativo_inizio = null;
             }
-            if (body.anno_associativo_inizio !== undefined) {
+            if (body.anno_associativo_inizio !== undefined && updates.anno_associativo_inizio === undefined) {
                 const v = body.anno_associativo_inizio || null;
                 if (v !== null && !GG_MM.test(v)) return res.status(400).json({ error: 'Inizio anno associativo non valido (gg-mm)' });
                 updates.anno_associativo_inizio = v;
@@ -79,13 +100,14 @@ module.exports = {
                 if (v.length > max) return res.status(400).json({ error: `${f}: massimo ${max} caratteri` });
                 updates[f] = v || null;
             }
-            // L'inizio personalizzato ha senso solo con anno personalizzato
-            const tipoFinale = updates.anno_associativo_tipo !== undefined ? updates.anno_associativo_tipo : undefined;
-            if (tipoFinale !== undefined && tipoFinale !== 'personalizzato') updates.anno_associativo_inizio = null;
 
-            const societa = await Societa.findByPk(req.params.societaId);
-            if (!societa) return res.status(404).json({ error: 'Società non trovata' });
-            const licenza = await ensureLicenza(models, societa);
+            const licenza = await Licenza.findByPk(req.params.id);
+            if (!licenza) return res.status(404).json({ error: 'Licenza non trovata' });
+
+            // Attivazione di una licenza registrata dal sito: data inizio = oggi se non indicata
+            if (updates.stato === 'attiva' && licenza.stato !== 'attiva' && !(updates.data_inizio ?? licenza.data_inizio)) {
+                updates.data_inizio = toDateOnly(new Date());
+            }
             const inizio = updates.data_inizio !== undefined ? updates.data_inizio : licenza.data_inizio;
             const scadenza = updates.data_scadenza !== undefined ? updates.data_scadenza : licenza.data_scadenza;
             if (inizio && scadenza && scadenza < inizio) {
@@ -96,6 +118,39 @@ module.exports = {
         } catch (error) {
             console.error('Errore salvataggio licenza:', error);
             return res.status(400).json({ error: error.message || 'Errore salvataggio licenza' });
+        }
+    },
+
+    // --- Interni (service-to-service, x-internal-secret) -----------------------
+
+    // GET /internal/licenze-stato?societaIds=1,2 → { "1": { licenza_id, stato } }
+    // Usato da auth per consentire l'accesso al gestionale solo con licenza attiva.
+    async internalStato(req, res) {
+        try {
+            const ids = String(req.query.societaIds || '')
+                .split(',').map(v => parseInt(v, 10)).filter(Number.isInteger).slice(0, 500);
+            if (!ids.length) return res.json({});
+            const societa = await Societa.findAll({ where: { id: { [Op.in]: ids } }, attributes: ['id', 'licenza_id'] });
+            const licenzaIds = [...new Set(societa.map(s => s.licenza_id).filter(Boolean))];
+            const licenze = await Licenza.findAll({ where: { id: { [Op.in]: licenzaIds } }, attributes: ['id', 'stato'] });
+            const stati = Object.fromEntries(licenze.map(l => [l.id, l.stato]));
+            const out = {};
+            societa.forEach(s => { if (s.licenza_id) out[s.id] = { licenza_id: s.licenza_id, stato: stati[s.licenza_id] || null }; });
+            return res.json(out);
+        } catch (error) {
+            console.error('Errore stato licenze (interno):', error);
+            return res.status(500).json({ error: 'Errore lettura licenze' });
+        }
+    },
+
+    // GET /internal/societa-licenze → [{ societa_id, licenza_id }]
+    async internalSocietaLicenze(req, res) {
+        try {
+            const societa = await Societa.findAll({ where: { licenza_id: { [Op.ne]: null } }, attributes: ['id', 'licenza_id'] });
+            return res.json(societa.map(s => ({ societa_id: s.id, licenza_id: s.licenza_id })));
+        } catch (error) {
+            console.error('Errore mappa società-licenze (interno):', error);
+            return res.status(500).json({ error: 'Errore lettura licenze' });
         }
     },
 };

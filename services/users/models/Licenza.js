@@ -1,12 +1,13 @@
 module.exports = (sequelize, DataTypes) => {
-    // Licenza d'uso del gestionale per una società (Backoffice → tab Registrazione).
-    // Oltre a piano/stato/date contiene la SNAPSHOT dei dati di registrazione così
-    // come inviati dal cliente: è volutamente indipendente dall'anagrafica della
-    // società, le modifiche successive all'una non toccano l'altra.
+    // Licenza d'uso del gestionale (Backoffice → Licenze). Una licenza raggruppa
+    // una o più società (societa.licenza_id) e ha almeno un amministratore
+    // (utenti auth con licenzaId). Il suo nome è l'associazione registrata.
+    // Contiene la SNAPSHOT dei dati di registrazione così come inviati dal
+    // cliente: volutamente indipendente dall'anagrafica delle società.
     const Licenza = sequelize.define('Licenza', {
         societa_id: {
             type: DataTypes.INTEGER,
-            allowNull: false
+            allowNull: false // società di registrazione (la prima della licenza)
         },
         piano: {
             type: DataTypes.STRING(20),
@@ -18,7 +19,8 @@ module.exports = (sequelize, DataTypes) => {
             type: DataTypes.STRING(20),
             allowNull: false,
             defaultValue: 'attiva',
-            validate: { isIn: [['attiva', 'sospesa', 'scaduta']] }
+            // in_attesa = registrata dal sito, da attivare dal Backoffice
+            validate: { isIn: [['attiva', 'in_attesa', 'sospesa', 'scaduta']] }
         },
         data_inizio: {
             type: DataTypes.DATEONLY,

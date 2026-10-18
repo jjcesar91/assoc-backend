@@ -6,6 +6,8 @@ const automazioneRoutes = require('./automazioneRoutes');
 const piattaformaRoutes = require('./piattaformaRoutes');
 const licenzeRoutes = require('./licenzeRoutes');
 const piattaformaController = require('../controllers/piattaformaController');
+const licenzeController = require('../controllers/licenzeController');
+const registrazioneController = require('../controllers/registrazioneController');
 const authenticateToken = require('../middleware/auth');
 const requireInternal = require('../middleware/requireInternal');
 const InternalController = require('../controllers/internalController');
@@ -19,6 +21,8 @@ router.get('/health', (req, res) => {
 
 // --- Rotte interne (service-to-service, protette da secret) — PRIMA dell'auth utente ---
 router.post('/internal/ricevuta-uploaded', requireInternal, InternalController.ricevutaUploaded);
+router.get('/internal/licenze-stato', requireInternal, licenzeController.internalStato);
+router.get('/internal/societa-licenze', requireInternal, licenzeController.internalSocietaLicenze);
 
 // --- Rotte PUBBLICHE (senza autenticazione) — pagina /ricevuta-telematica/:societaId ---
 // Devono stare PRIMA di router.use(authenticateToken).
@@ -29,6 +33,8 @@ router.post('/public/soci', socioController.getOrCreatePublicSocio);
 router.get('/public/rt-certificato/installa', certificatoController.installaCertificato);
 // Personalizzazione dell'ambiente (nome, colori, logo): serve già alla pagina di login.
 router.get('/public/piattaforma', piattaformaController.getPublic);
+// Registrazione dal sito: licenza Free in attesa + prima società + amministratore
+router.post('/public/registrazione', registrazioneController.registra);
 
 router.use(authenticateToken);
 router.use('/soci', socioRoutes);

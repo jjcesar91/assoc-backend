@@ -1,7 +1,8 @@
 const { Op } = require('sequelize');
 const models = require('../models');
-const { Societa, SocietaAffiliazioni } = models;
-const { ensureLicenza } = require('../utils/licenze');
+const { Societa, SocietaAffiliazioni, Licenza } = models;
+const { ensureLicenzaForSocieta } = require('../utils/licenze');
+const { createSocietaDefaults } = require('../utils/societaDefaults');
 const { cookieName, certificatoValido } = require('../utils/rtCertificato');
 
 const getUserScope = (req) => {
@@ -77,102 +78,32 @@ class SocietaController {
     }
 
     // Create Societa
+    // Senza licenza_id la società apre una nuova licenza (ne è la società di
+    // registrazione); con licenza_id (solo superuser, Backoffice → Licenza →
+    // Società) viene aggiunta a una licenza esistente.
     async createSocieta(req, res) {
         try {
-            const societaData = { ...req.body };
-            // Simple validation or cleanup could happen here
-            const societa = await Societa.create(societaData);
+            const { licenza_id: licenzaIdRaw, ...societaData } = req.body || {};
+            let licenzaId = null;
+            if (licenzaIdRaw !== undefined && licenzaIdRaw !== null && licenzaIdRaw !== '') {
+                if (req.user?.role !== 'superuser') {
+                    return res.status(403).json({ error: 'Solo un superuser può aggiungere società a una licenza' });
+                }
+                const licenza = await Licenza.findByPk(parseInt(licenzaIdRaw, 10));
+                if (!licenza) return res.status(400).json({ error: 'Licenza non trovata' });
+                licenzaId = licenza.id;
+            }
 
-             // Create default modules for the new society
-             try {
-                 const defaultModules = [
-                     {
-                         descrizione: 'MODULO ISCRIZIONE',
-                         testo: '',
-                         htmlContent: '',
-                         societa_id: societa.id
-                     },
-                     {
-                         descrizione: 'INFORMATIVA PRIVACY',
-                         testo: '',
-                         htmlContent: '',
-                         societa_id: societa.id
-                     }
-                 ];
+            const societa = await Societa.create({ ...societaData, licenza_id: licenzaId });
+            await createSocietaDefaults(societa, req.headers.authorization);
 
-                 // Use the internal docker service name and port
-                 const documentsServiceUrl = process.env.DOCUMENTS_SERVICE_URL || 'http://documents_ms:3000';
-
-                 await fetch(`${documentsServiceUrl}/api/moduli`, {
-                     method: 'POST',
-                     headers: {
-                         'Content-Type': 'application/json',
-                         'Authorization': req.headers.authorization
-                     },
-                     body: JSON.stringify(defaultModules)
-                 });
-             } catch (moduleError) {
-                 // Log error but don't fail the society creation, or maybe we should?
-                 // For now, just log it as the society is already created.
-                 console.error('Error creating default modules:', moduleError);
-             }
-
-             // Create default CASSA account for the new society
-             try {
-                 const paymentsServiceUrl = process.env.PAYMENTS_SERVICE_URL || 'http://payments_ms:3000';
-                 await fetch(`${paymentsServiceUrl}/api/conti`, {
-                     method: 'POST',
-                     headers: { 
-                         'Content-Type': 'application/json',
-                         'Authorization': req.headers.authorization
-                     },
-                     body: JSON.stringify({
-                         descrizione: 'CASSA',
-                         modalita_pagamento: ['Contanti'],
-                         societa_id: societa.id
-                     })
-                 });
-             } catch (contoError) {
-                 console.error('Error creating default CASSA account:', contoError);
-             }
-
-             // Create default APS groups if tipo_associazione is APS
-             if (societaData.tipo_associazione === 'APS') {
-                 try {
-                     const paymentsServiceUrl = process.env.PAYMENTS_SERVICE_URL || 'http://payments_ms:3000';
-                     await fetch(`${paymentsServiceUrl}/api/gruppi/init-aps`, {
-                         method: 'POST',
-                         headers: { 
-                             'Content-Type': 'application/json',
-                             'Authorization': req.headers.authorization
-                         },
-                         body: JSON.stringify({ societa_id: societa.id }),
-                     });
-                 } catch (gruppiError) {
-                     console.error('Error creating default APS groups:', gruppiError);
-                 }
-             } else if (societaData.tipo_associazione === 'ASD') {
-                 try {
-                     const paymentsServiceUrl = process.env.PAYMENTS_SERVICE_URL || 'http://payments_ms:3000';
-                     await fetch(`${paymentsServiceUrl}/api/gruppi/init-asd`, {
-                         method: 'POST',
-                         headers: { 
-                             'Content-Type': 'application/json',
-                             'Authorization': req.headers.authorization
-                         },
-                         body: JSON.stringify({ societa_id: societa.id }),
-                     });
-                 } catch (gruppiError) {
-                     console.error('Error creating default ASD groups:', gruppiError);
-                 }
-             }
-
-            // Licenza della nuova società: piano Free, dati di registrazione
-            // precompilati dall'anagrafica appena creata.
-            try {
-                await ensureLicenza(models, societa);
-            } catch (licenzaError) {
-                console.error('Error creating default licenza:', licenzaError);
+            // Nessuna licenza indicata: la società apre la propria licenza (Free).
+            if (!licenzaId) {
+                try {
+                    await ensureLicenzaForSocieta(models, societa);
+                } catch (licenzaError) {
+                    console.error('Error creating default licenza:', licenzaError);
+                }
             }
 
             return res.status(201).json(societa);
@@ -181,7 +112,7 @@ class SocietaController {
             return res.status(500).json({ error: error.message });
         }
     }
-        
+
     // Update Societa
     async updateSocieta(req, res) {
         let transaction;

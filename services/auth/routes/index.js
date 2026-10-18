@@ -11,6 +11,9 @@ router.get('/health', (req, res) => {
 
 // Interno (service-to-service): destinatari notifiche
 router.get('/internal/admin-emails', requireInternal, authController.internalAdminEmails);
+// Registrazione dal sito (chiamata dal servizio users)
+router.post('/internal/registrazione-admin/verifica', requireInternal, authController.internalVerificaRegistrazione);
+router.post('/internal/registrazione-admin', requireInternal, authController.internalRegistrazioneAdmin);
 
 router.post('/register', authController.register);
 router.post('/login', authController.login);
@@ -38,6 +41,11 @@ router.get('/admin/users/:id/features', authenticateToken, requireAdmin, authCon
 // Backoffice (solo superuser): onboarding amministratore e link reset password
 router.post('/admin/onboarding-admin', authenticateToken, requireSuperuser, authController.adminOnboardAdmin);
 router.post('/admin/users/:id/password-reset-link', authenticateToken, requireSuperuser, authController.adminCreatePasswordResetLink);
+router.get('/admin/licenze/amministratori-conteggio', authenticateToken, requireSuperuser, authController.adminContaAmministratoriLicenze);
+router.get('/admin/licenze/:licenzaId/amministratori', authenticateToken, requireSuperuser, authController.adminListAmministratoriLicenza);
+router.post('/admin/licenze/:licenzaId/amministratori', authenticateToken, requireSuperuser, authController.adminAddAmministratoreLicenza);
+router.delete('/admin/licenze/:licenzaId/amministratori', authenticateToken, requireSuperuser, authController.adminRemoveAmministratoreLicenza);
+router.post('/admin/licenze/:licenzaId/provisioning', authenticateToken, requireSuperuser, authController.adminProvisioningSocietaLicenza);
 router.put('/admin/users/:id/features', authenticateToken, requireAdmin, authController.adminSetUserFeatures);
 
 // Accesso frontend soci (solo admin)

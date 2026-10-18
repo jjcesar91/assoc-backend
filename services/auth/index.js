@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const db = require('./models');
+const { scheduleBackfill } = require('./utils/licenze');
 const routes = require('./routes');
 require('dotenv').config();
 
@@ -66,6 +67,8 @@ async function start({ retries = 15, delayMs = 3000 } = {}) {
       `);
       await db.sequelize.sync({ alter: true });
       console.log('Database connected and synced successfully.');
+      // Licenze senza amministratori: adottano gli admin delle proprie società
+      scheduleBackfill(db.User);
 
       // Run seeders after database sync
       const { exec } = require('child_process');

@@ -75,6 +75,11 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: true,
       defaultValue: null   // id della società di appartenenza (null solo per superuser)
     },
+    licenzaId: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      defaultValue: null   // valorizzato sulle righe degli amministratori di licenza (una per società della licenza)
+    },
     sessions_revoked_at: {
       type: DataTypes.DATE,
       allowNull: true,

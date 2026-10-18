@@ -5,6 +5,27 @@ const {
     findValidToken,
     generateUnusablePassword,
 } = require('../utils/passwordReset');
+const { filtraSocietaAttive } = require('../utils/licenze');
+
+// Password per persona: la stessa email ha una riga per ogni società in cui
+// lavora (gestionale). Quando la persona cambia o reimposta la password, l'hash
+// viene copiato su tutte le sue righe del gestionale (mai su quelle Area Soci).
+async function propagaPassword(user, options = {}) {
+    if (isSocioRole(user.role)) return;
+    await User.update(
+        { password: user.password, ...(options.revoca ? { sessions_revoked_at: options.revoca } : {}) },
+        {
+            where: { [Op.and]: [emailWhere(user.email), { role: { [Op.ne]: 'socio' } }, { id: { [Op.ne]: user.id } }] },
+            hooks: false, validate: false, transaction: options.transaction,
+        }
+    );
+}
+
+const LICENZA_MESSAGGI = {
+    in_attesa: 'La registrazione è in attesa di attivazione: riceverai conferma quando la licenza sarà attiva.',
+    sospesa: 'La licenza è sospesa: contatta l\'assistenza.',
+    scaduta: 'La licenza è scaduta: contatta l\'assistenza per il rinnovo.',
+};
 const { randomUUID } = require('crypto');
 const { ValidationError, Op } = require('sequelize');
 
@@ -38,10 +59,14 @@ const isSocioRole = (role) => role === 'socio';
 //   - true  → solo le righe con role 'socio' (tendina Area Soci)
 //   - false → solo le righe gestionali (role !== 'socio')
 //   - null  → tutte (retrocompatibilità)
+// Confronto email senza distinzione di maiuscole/minuscole (lower(email) = ...).
+// Niente ILIKE: "_" e "%" negli indirizzi verrebbero interpretati come jolly.
+const emailWhere = (email) => sequelize.where(sequelize.fn('lower', sequelize.col('email')), String(email || '').trim().toLowerCase());
+
 const getSocietaIdsForEmail = async (email, isSocio = null) => {
     if (!email) return [];
     const rows = await User.findAll({
-        where: { email },
+        where: emailWhere(email),
         attributes: ['societaId', 'role'],
     });
     const filtered = isSocio === null
@@ -96,7 +121,7 @@ exports.login = async (req, res) => {
 
         // La stessa email può esistere in più società (stessa persona): recuperiamo
         // tutte le righe e teniamo solo quelle attive con password valida.
-        const candidates = await User.findAll({ where: { email } });
+        const candidates = await User.findAll({ where: emailWhere(email) });
         if (!candidates.length) {
             console.log('User not found');
             return res.status(401).json({ error: 'User not found' }); // DEV: specific message
@@ -117,7 +142,25 @@ exports.login = async (req, res) => {
 
         // Separiamo i due mondi: Area Soci (role 'socio') e gestionale (altri ruoli).
         const socioRows = matched.filter(u => isSocioRole(u.role));
-        const gestRows = matched.filter(u => !isSocioRole(u.role));
+        let gestRows = matched.filter(u => !isSocioRole(u.role));
+
+        // Gestionale: solo le società con licenza attiva (i superuser non hanno società).
+        if (gestRows.some(u => u.societaId != null)) {
+            let esito;
+            try {
+                esito = await filtraSocietaAttive(gestRows.map(u => u.societaId));
+            } catch (e) {
+                console.error('Login: verifica licenze non disponibile', e.message);
+                return res.status(503).json({ error: 'Servizio temporaneamente non disponibile, riprova tra poco.' });
+            }
+            const consentite = new Set(esito.consentite);
+            const bloccate = Object.values(esito.bloccate);
+            gestRows = gestRows.filter(u => u.societaId == null || consentite.has(u.societaId));
+            if (!gestRows.length && !socioRows.length && bloccate.length) {
+                const stato = bloccate.includes('sospesa') ? 'sospesa' : bloccate.includes('scaduta') ? 'scaduta' : 'in_attesa';
+                return res.status(403).json({ error: LICENZA_MESSAGGI[stato], code: 'LICENZA_NON_ATTIVA', stato });
+            }
+        }
 
         // Se l'email apre entrambi i mondi e il client non ha ancora scelto,
         // restituiamo la richiesta di scelta (nessun token emesso).
@@ -161,7 +204,13 @@ exports.refreshToken = async (req, res) => {
             return res.sendStatus(403);
         }
 
-        const societaIds = await getSocietaIdsForEmail(user.email, isSocioRole(user.role));
+        let societaIds = await getSocietaIdsForEmail(user.email, isSocioRole(user.role));
+        if (!isSocioRole(user.role)) {
+            // Licenza della società attiva non più attiva: niente rinnovo, si torna al login
+            const { consentite } = await filtraSocietaAttive(societaIds, { failOpen: true });
+            if (user.societaId != null && !consentite.includes(user.societaId)) return res.sendStatus(403);
+            societaIds = consentite;
+        }
         const tokens = generateTokens(user, societaIds.length ? societaIds : null);
         res.json(tokens);
     });
@@ -175,7 +224,10 @@ exports.me = async (req, res) => {
         if (!user) return res.sendStatus(404);
         // Espone l'elenco delle società consentite (per la tendina di cambio società),
         // confinato al mondo della sessione corrente (Area Soci vs gestionale).
-        const societaIds = await getSocietaIdsForEmail(user.email, isSocioRole(user.role));
+        let societaIds = await getSocietaIdsForEmail(user.email, isSocioRole(user.role));
+        if (!isSocioRole(user.role)) {
+            societaIds = (await filtraSocietaAttive(societaIds, { failOpen: true })).consentite;
+        }
         res.json({ ...user.toJSON(), societaIds });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -192,15 +244,24 @@ exports.switchSocieta = async (req, res) => {
         }
         // Restiamo nello stesso mondo (Area Soci vs gestionale) della sessione corrente.
         const isSocio = isSocioRole(req.user.role);
-        const societaIds = await getSocietaIdsForEmail(req.user.email, isSocio);
+        let societaIds = await getSocietaIdsForEmail(req.user.email, isSocio);
+        if (!isSocio) {
+            const esito = await filtraSocietaAttive(societaIds, { failOpen: true });
+            if (esito.bloccate[targetSocietaId]) {
+                return res.status(403).json({ error: LICENZA_MESSAGGI[esito.bloccate[targetSocietaId]] || 'Licenza non attiva', code: 'LICENZA_NON_ATTIVA' });
+            }
+            societaIds = esito.consentite;
+        }
         if (!societaIds.includes(targetSocietaId)) {
             return res.status(403).json({ error: 'Società non consentita per questo utente' });
         }
         const target = await User.findOne({
             where: {
-                email: req.user.email,
-                societaId: targetSocietaId,
-                role: isSocio ? 'socio' : { [Op.ne]: 'socio' },
+                [Op.and]: [
+                    emailWhere(req.user.email),
+                    { societaId: targetSocietaId },
+                    { role: isSocio ? 'socio' : { [Op.ne]: 'socio' } },
+                ],
             },
         });
         if (!target) return res.status(404).json({ error: 'Utente non trovato per la società scelta' });
@@ -267,6 +328,7 @@ exports.updatePassword = async (req, res) => {
         validatePasswordOrThrow(newPassword);
         user.password = newPassword; // Will be hashed by beforeUpdate hook
         await user.save();
+        await propagaPassword(user); // stessa password su tutte le società della persona
 
         res.json({ message: 'Password updated successfully' });
     } catch (error) {
@@ -742,8 +804,9 @@ exports.adminCreatePasswordResetLink = async (req, res) => {
 // Crea l'amministratore di una nuova società senza password utilizzabile e ritorna
 // il link per impostarla, in un'unica transazione.
 exports.adminOnboardAdmin = async (req, res) => {
-    const { societaId, email, nome, cognome, telefono } = req.body || {};
+    const { societaId, licenzaId, email, nome, cognome, telefono } = req.body || {};
     const parsedSocietaId = parseInt(societaId, 10);
+    const parsedLicenzaId = licenzaId ? parseInt(licenzaId, 10) : null;
     if (!parsedSocietaId || !email) {
         return res.status(400).json({ error: 'societaId ed email sono obbligatori' });
     }
@@ -763,6 +826,7 @@ exports.adminOnboardAdmin = async (req, res) => {
                 role: 'admin',
                 attivo: true,
                 societaId: parsedSocietaId,
+                licenzaId: parsedLicenzaId,
             }, { transaction });
             const link = await createResetToken(PasswordResetToken, user.id, req.user.id, transaction);
             return { user, ...link };
@@ -811,6 +875,7 @@ exports.completePasswordReset = async (req, res) => {
             user.password = password;
             user.sessions_revoked_at = now;
             await user.save({ transaction });
+            await propagaPassword(user, { transaction, revoca: now });
             record.usedAt = now;
             await record.save({ transaction });
             await PasswordResetToken.destroy({
@@ -824,5 +889,194 @@ exports.completePasswordReset = async (req, res) => {
     } catch (error) {
         console.error('completePasswordReset:', error);
         res.status(400).json({ error: formatErrorMessage(error) });
+    }
+};
+
+// ---------------------------------------------------------------------------
+// Registrazione dal sito (chiamate interne dal servizio users)
+// ---------------------------------------------------------------------------
+
+// Una persona può registrare una sola volta la stessa email come gestionale
+async function verificaRegistrazione(email, password) {
+    validatePasswordOrThrow(password);
+    const esistente = await User.findOne({ where: { [Op.and]: [emailWhere(email), { role: { [Op.ne]: 'socio' } }] } });
+    if (esistente) {
+        const e = new Error('Email già registrata: accedi con le tue credenziali o contatta l\'assistenza.');
+        e.status = 400;
+        throw e;
+    }
+}
+
+// POST /internal/registrazione-admin/verifica { email, password }
+exports.internalVerificaRegistrazione = async (req, res) => {
+    try {
+        const email = String(req.body?.email || '').trim().toLowerCase();
+        if (!email) return res.status(400).json({ error: 'Email obbligatoria' });
+        await verificaRegistrazione(email, req.body?.password);
+        res.json({ ok: true });
+    } catch (error) {
+        res.status(400).json({ error: formatErrorMessage(error) });
+    }
+};
+
+// POST /internal/registrazione-admin { email, password, nome, cognome, telefono, societaId, licenzaId }
+// Crea l'amministratore della licenza registrata: l'accesso resta bloccato
+// (login) finché la licenza non è attiva.
+exports.internalRegistrazioneAdmin = async (req, res) => {
+    try {
+        const { password, nome, cognome, telefono } = req.body || {};
+        const email = String(req.body?.email || '').trim().toLowerCase();
+        const societaId = parseInt(req.body?.societaId, 10);
+        const licenzaId = parseInt(req.body?.licenzaId, 10);
+        if (!email || !societaId || !licenzaId) return res.status(400).json({ error: 'Dati mancanti' });
+        await verificaRegistrazione(email, password);
+        const user = await User.create({
+            email, password, nome: nome || null, cognome: cognome || null, telefono: telefono || null,
+            role: 'admin', attivo: true, societaId, licenzaId,
+        });
+        res.status(201).json({ id: user.id });
+    } catch (error) {
+        res.status(error.status || 400).json({ error: formatErrorMessage(error) });
+    }
+};
+
+// ---------------------------------------------------------------------------
+// Amministratori di licenza (Backoffice, solo superuser)
+// Un amministratore di licenza è una persona (email) con una riga admin, con
+// licenzaId, in ogni società della licenza.
+// ---------------------------------------------------------------------------
+
+const raggruppaPerEmail = (rows) => {
+    const byEmail = new Map();
+    rows.forEach(u => {
+        const g = byEmail.get(u.email) || { email: u.email, nome: u.nome, cognome: u.cognome, telefono: u.telefono, attivo: false, userIds: [], societaIds: [] };
+        g.nome = g.nome || u.nome;
+        g.cognome = g.cognome || u.cognome;
+        g.telefono = g.telefono || u.telefono;
+        g.attivo = g.attivo || u.attivo !== false;
+        g.userIds.push(u.id);
+        if (u.societaId != null) g.societaIds.push(u.societaId);
+        byEmail.set(u.email, g);
+    });
+    return [...byEmail.values()].sort((a, b) => a.email.localeCompare(b.email));
+};
+
+// Crea (o promuove) la riga admin della persona nella società. La nuova riga
+// riceve la stessa password delle altre righe gestionale della persona; se la
+// persona non ne ha, una password non utilizzabile (imposterà la sua col link).
+async function assicuraRigaAdmin({ email, nome, cognome, telefono, societaId, licenzaId }, transaction) {
+    const riga = await User.findOne({ where: { [Op.and]: [emailWhere(email), { societaId }] }, transaction });
+    if (riga) {
+        if (isSocioRole(riga.role)) {
+            const e = new Error(`L'email ${email} è già usata da un socio nella società ${societaId}`);
+            e.status = 400;
+            throw e;
+        }
+        await riga.update({ role: 'admin', licenzaId }, { transaction, hooks: false, validate: false });
+        return { user: riga, creata: false };
+    }
+    const modello = await User.findOne({ where: { [Op.and]: [emailWhere(email), { role: { [Op.ne]: 'socio' } }] }, transaction });
+    const user = await User.create({
+        email: modello?.email || email, password: generateUnusablePassword(), nome: nome || modello?.nome || null,
+        cognome: cognome || modello?.cognome || null, telefono: telefono || modello?.telefono || null,
+        role: 'admin', attivo: true, societaId, licenzaId,
+    }, { transaction });
+    if (modello) {
+        await User.update({ password: modello.password }, { where: { id: user.id }, hooks: false, validate: false, transaction });
+    }
+    return { user, creata: true, nuovaPersona: !modello };
+}
+
+// GET /admin/licenze/amministratori-conteggio → { licenzaId: n }
+exports.adminContaAmministratoriLicenze = async (req, res) => {
+    try {
+        const rows = await User.findAll({ where: { licenzaId: { [Op.ne]: null } }, attributes: ['licenzaId', 'email'] });
+        const perLicenza = {};
+        rows.forEach(r => { (perLicenza[r.licenzaId] = perLicenza[r.licenzaId] || new Set()).add(r.email); });
+        res.json(Object.fromEntries(Object.entries(perLicenza).map(([k, v]) => [k, v.size])));
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// GET /admin/licenze/:licenzaId/amministratori
+exports.adminListAmministratoriLicenza = async (req, res) => {
+    try {
+        const licenzaId = parseInt(req.params.licenzaId, 10);
+        const rows = await User.findAll({
+            where: { licenzaId },
+            attributes: ['id', 'email', 'nome', 'cognome', 'telefono', 'attivo', 'societaId'],
+        });
+        res.json(raggruppaPerEmail(rows));
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// POST /admin/licenze/:licenzaId/amministratori { email, nome, cognome, telefono, societaIds }
+// Ritorna un link per impostare la password se la persona è nuova.
+exports.adminAddAmministratoreLicenza = async (req, res) => {
+    try {
+        const licenzaId = parseInt(req.params.licenzaId, 10);
+        const email = String(req.body?.email || '').trim().toLowerCase();
+        const societaIds = (Array.isArray(req.body?.societaIds) ? req.body.societaIds : [])
+            .map(v => parseInt(v, 10)).filter(Number.isInteger);
+        if (!licenzaId || !email || !societaIds.length) {
+            return res.status(400).json({ error: 'Email e almeno una società sono obbligatorie' });
+        }
+        const { nome, cognome, telefono } = req.body || {};
+        const result = await sequelize.transaction(async (transaction) => {
+            let primo = null;
+            let nuovaPersona = false;
+            for (const societaId of societaIds) {
+                const r = await assicuraRigaAdmin({ email, nome, cognome, telefono, societaId, licenzaId }, transaction);
+                primo = primo || r.user;
+                nuovaPersona = nuovaPersona || !!r.nuovaPersona;
+            }
+            const link = nuovaPersona ? await createResetToken(PasswordResetToken, primo.id, req.user.id, transaction) : null;
+            return { userId: primo.id, link };
+        });
+        res.status(201).json({ email, userId: result.userId, ...(result.link || {}) });
+    } catch (error) {
+        res.status(error.status || 400).json({ error: formatErrorMessage(error) });
+    }
+};
+
+// DELETE /admin/licenze/:licenzaId/amministratori?email=... — toglie alla persona
+// l'accesso alle società della licenza. Deve restare almeno un amministratore.
+exports.adminRemoveAmministratoreLicenza = async (req, res) => {
+    try {
+        const licenzaId = parseInt(req.params.licenzaId, 10);
+        const email = String(req.query.email || '').trim();
+        const rows = await User.findAll({ where: { licenzaId }, attributes: ['email'] });
+        const emails = new Set(rows.map(r => r.email));
+        if (!emails.has(email)) return res.sendStatus(404);
+        if (emails.size <= 1) {
+            return res.status(400).json({ error: 'La licenza deve avere almeno un amministratore' });
+        }
+        await User.destroy({ where: { licenzaId, email } });
+        res.status(204).send();
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// POST /admin/licenze/:licenzaId/provisioning { societaId } — dopo aver aggiunto una
+// società alla licenza: i suoi amministratori ottengono l'accesso anche a quella.
+exports.adminProvisioningSocietaLicenza = async (req, res) => {
+    try {
+        const licenzaId = parseInt(req.params.licenzaId, 10);
+        const societaId = parseInt(req.body?.societaId, 10);
+        if (!licenzaId || !societaId) return res.status(400).json({ error: 'Dati mancanti' });
+        const rows = await User.findAll({ where: { licenzaId } });
+        const persone = raggruppaPerEmail(rows);
+        await sequelize.transaction(async (transaction) => {
+            for (const p of persone) {
+                await assicuraRigaAdmin({ email: p.email, nome: p.nome, cognome: p.cognome, telefono: p.telefono, societaId, licenzaId }, transaction);
+            }
+        });
+        res.json({ amministratori: persone.length });
+    } catch (error) {
+        res.status(error.status || 400).json({ error: formatErrorMessage(error) });
     }
 };
