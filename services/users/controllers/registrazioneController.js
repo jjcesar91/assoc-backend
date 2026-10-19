@@ -1,6 +1,8 @@
 const models = require('../models');
 const { createSocietaDefaults } = require('../utils/societaDefaults');
 const { createRateLimiter, clientKey } = require('../utils/rateLimit');
+const csrf = require('../utils/csrf');
+const turnstile = require('../utils/turnstile');
 
 const { Societa, Licenza, sequelize } = models;
 
@@ -10,9 +12,11 @@ const internalHeaders = () => ({
     'x-internal-secret': process.env.INTERNAL_API_SECRET || 'internal_secret_change_me',
 });
 
-// Anti-abuso: per client e complessivo (i proxy possono rendere imprecisa l'IP).
-const perClient = createRateLimiter({ windowMs: 60 * 60 * 1000, limit: 5 });
-const globale = createRateLimiter({ windowMs: 60 * 60 * 1000, limit: 60 });
+// Anti-abuso: limiti di invio per IP, per email e complessivo (finestra di un'ora).
+// I tentativi falliti contano: chi prova a forzare il form esaurisce il limite.
+const perClient = createRateLimiter({ windowMs: 60 * 60 * 1000, limit: 10 });
+const perEmail = createRateLimiter({ windowMs: 60 * 60 * 1000, limit: 5 });
+const globale = createRateLimiter({ windowMs: 60 * 60 * 1000, limit: 100 });
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const GG_MM = /^(0[1-9]|[12]\d|3[01])-(0[1-9]|1[0-2])$/;
@@ -31,7 +35,7 @@ function validate(body) {
     const d = {};
     for (const [k, max] of Object.entries(LIMITS)) {
         d[k] = str(body[k]);
-        if (d[k].length > max) return { error: `${k}: massimo ${max} caratteri` };
+        if (d[k].length > max) return { error: `Massimo ${max} caratteri`, field: k };
     }
     d.tipologia = str(body.tipologia).toUpperCase();
     d.anno_associativo_tipo = str(body.anno_associativo_tipo);
@@ -46,23 +50,30 @@ function validate(body) {
         telefono: 'Telefono associazione',
     };
     for (const [k, label] of Object.entries(required)) {
-        if (!d[k]) return { error: `${label}: campo obbligatorio` };
+        if (!d[k]) return { error: `${label}: campo obbligatorio`, field: k };
     }
-    if (!TIPOLOGIE.includes(d.tipologia)) return { error: 'Tipologia non valida' };
-    if (!EMAIL.test(d.email)) return { error: 'Email non valida' };
-    if (!ANNI[d.anno_associativo_tipo]) return { error: 'Anno associativo non valido' };
+    if (!TIPOLOGIE.includes(d.tipologia)) return { error: 'Tipologia non valida', field: 'tipologia' };
+    if (!EMAIL.test(d.email)) return { error: 'Email non valida', field: 'email' };
+    if (!ANNI[d.anno_associativo_tipo]) return { error: 'Anno associativo non valido', field: 'anno_associativo_tipo' };
     if (d.anno_associativo_tipo === 'personalizzato' && !GG_MM.test(d.anno_associativo_inizio)) {
-        return { error: 'Inizio anno associativo non valido' };
+        return { error: 'Inizio anno associativo non valido', field: 'anno_associativo_inizio' };
     }
     if (typeof body.password !== 'string' || body.password !== body.password_conferma) {
-        return { error: 'Le password non coincidono' };
+        return { error: 'Le password non coincidono', field: 'password_conferma' };
     }
-    if (body.privacy !== true) return { error: 'È necessario accettare l\'informativa privacy' };
+    if (body.privacy !== true) return { error: 'È necessario accettare l\'informativa privacy', field: 'privacy' };
     d.password = body.password;
     return { data: d };
 }
 
 module.exports = {
+    // GET /public/registrazione/sessione — token CSRF (con cookie) e chiave pubblica
+    // Turnstile per il form. Va richiesta all'apertura della pagina.
+    sessione(req, res) {
+        res.set('Cache-Control', 'no-store');
+        return res.json({ csrfToken: csrf.emetti(res), turnstileSiteKey: turnstile.siteKey() });
+    },
+
     // POST /public/registrazione — registrazione dal sito: licenza Free "in attesa",
     // prima società e utente amministratore (email/password del form). L'accesso
     // al gestionale resta bloccato finché la licenza non viene attivata dal Backoffice.
@@ -70,12 +81,29 @@ module.exports = {
         // Campo trappola: invisibile agli utenti, compilato dai bot
         if (str(req.body?.website)) return res.status(201).json({ ok: true });
 
-        if (!perClient(clientKey(req)) || !globale('all')) {
-            return res.status(429).json({ error: 'Troppe registrazioni in poco tempo. Riprova più tardi.' });
+        const ip = clientKey(req);
+        const emailKey = str(req.body?.email).toLowerCase();
+        if (!perClient(ip) || !globale('all') || (emailKey && !perEmail(emailKey))) {
+            console.warn(`[registrazione] limite invii superato (ip ${ip})`);
+            return res.status(429).json({ error: 'Troppi tentativi in poco tempo. Riprova tra un\'ora.', code: 'LIMITE_INVII' });
         }
 
-        const { data, error } = validate(req.body || {});
-        if (error) return res.status(400).json({ error });
+        const motivoCsrf = csrf.verifica(req);
+        if (motivoCsrf) {
+            console.warn(`[registrazione] CSRF ${motivoCsrf} (ip ${ip})`);
+            const msg = motivoCsrf === 'troppo_presto'
+                ? 'Invio troppo rapido: controlla i dati e riprova.'
+                : 'La sessione del modulo è scaduta: riprova, i dati inseriti non sono stati persi.';
+            return res.status(403).json({ error: msg, code: 'CSRF' });
+        }
+
+        const { data, error, field } = validate(req.body || {});
+        if (error) return res.status(400).json({ error, field });
+
+        // Turnstile dopo la validazione: il token è monouso, non va sprecato per un campo mancante
+        if (!(await turnstile.verificaTurnstile(req.body?.turnstileToken, ip))) {
+            return res.status(400).json({ error: 'Verifica anti-bot non superata: riprova.', code: 'TURNSTILE' });
+        }
 
         // Verifica preliminare (policy password, email libera) prima di scrivere
         try {
@@ -86,7 +114,8 @@ module.exports = {
             });
             if (!check.ok) {
                 const err = await check.json().catch(() => ({}));
-                return res.status(400).json({ error: err.error || 'Dati di accesso non validi' });
+                const msg = err.error || 'Dati di accesso non validi';
+                return res.status(400).json({ error: msg, field: /email/i.test(msg) ? 'email' : 'password' });
             }
         } catch (e) {
             console.error('Registrazione: auth non raggiungibile', e.message);
@@ -162,7 +191,7 @@ module.exports = {
 
         // Dati di default della società (moduli, conto CASSA, gruppi) in background
         createSocietaDefaults(societa).catch(err => console.error('Registrazione: default società', err.message));
-        console.log(`[registrazione] nuova licenza in attesa per società ${societa.id}`);
+        console.log(`[registrazione] nuova licenza in attesa per società ${societa.id} (ip ${ip})`);
         return res.status(201).json({ ok: true });
     },
 };

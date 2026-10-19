@@ -17,11 +17,18 @@ function createRateLimiter({ windowMs, limit }) {
     };
 }
 
-// Client dietro i proxy (load balancer → Vite → nginx): primo indirizzo di
-// X-Forwarded-For se presente, altrimenti X-Real-IP / IP della connessione.
+// IP del visitatore dietro la catena di proxy: load balancer → Vite → nginx.
+// Il load balancer scrive in X-Forwarded-For l'IP del client, Vite (xfwd) vi
+// aggiunge quello del load balancer, nginx lo inoltra invariato. Gli ultimi
+// TRUSTED_PROXY_HOPS indirizzi sono quindi della nostra infrastruttura e quello
+// subito prima è il client reale; i valori più a sinistra possono essere stati
+// inventati dal client e vengono ignorati.
 function clientKey(req) {
-    const xff = req.headers['x-forwarded-for'];
-    if (xff) return String(xff).split(',')[0].trim();
+    const hops = Number.parseInt(process.env.TRUSTED_PROXY_HOPS || '1', 10);
+    const xff = String(req.headers['x-forwarded-for'] || '')
+        .split(',').map(s => s.trim()).filter(Boolean);
+    if (xff.length > hops) return xff[xff.length - 1 - hops];
+    if (xff.length) return xff[0];
     return req.headers['x-real-ip'] || req.ip || 'unknown';
 }
 

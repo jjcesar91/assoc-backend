@@ -35,6 +35,7 @@ router.get('/public/rt-certificato/installa', certificatoController.installaCert
 // Personalizzazione dell'ambiente (nome, colori, logo): serve già alla pagina di login.
 router.get('/public/piattaforma', piattaformaController.getPublic);
 // Registrazione dal sito: licenza Free in attesa + prima società + amministratore
+router.get('/public/registrazione/sessione', registrazioneController.sessione);
 router.post('/public/registrazione', registrazioneController.registra);
 
 router.use(authenticateToken);
