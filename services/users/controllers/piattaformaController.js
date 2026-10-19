@@ -50,6 +50,25 @@ function toPublic(config) {
     };
 }
 
+const EMAIL = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/;
+const MAX_CCN = 20;
+
+// Elenco email da stringa (virgole, punti e virgola, a capo) o array; null se non valido
+function parseEmailList(value) {
+    const raw = Array.isArray(value) ? value : String(value || '').split(/[\s,;]+/);
+    const list = [...new Set(raw.map(v => String(v).trim().toLowerCase()).filter(Boolean))];
+    if (list.length > MAX_CCN) return { error: `Massimo ${MAX_CCN} indirizzi` };
+    const invalid = list.filter(e => !EMAIL.test(e));
+    if (invalid.length) return { error: `Indirizzi non validi: ${invalid.join(', ')}` };
+    return { list };
+}
+
+// Configurazione completa, campi privati inclusi (solo superuser)
+function toPrivate(config) {
+    const c = config ? config.toJSON() : {};
+    return { ...toPublic(config), registrazione_ccn: Array.isArray(c.registrazione_ccn) ? c.registrazione_ccn : [] };
+}
+
 async function getOrCreate() {
     const [config] = await PiattaformaConfig.findOrCreate({ where: { id: CONFIG_ID }, defaults: { id: CONFIG_ID } });
     return config;
@@ -63,6 +82,23 @@ function removeUploadedFile(relPath) {
 
 module.exports = {
     sanitizeDescrizioneHtml,
+
+    // Destinatari in CCN dell'email di registrazione (usato da utils/emailRegistrazione)
+    async getRegistrazioneCcn() {
+        const config = await PiattaformaConfig.findByPk(CONFIG_ID);
+        return Array.isArray(config?.registrazione_ccn) ? config.registrazione_ccn : [];
+    },
+
+    // GET /piattaforma — configurazione completa, campi privati inclusi (solo superuser)
+    async getPrivate(req, res) {
+        try {
+            const config = await PiattaformaConfig.findByPk(CONFIG_ID);
+            return res.json(toPrivate(config));
+        } catch (error) {
+            console.error('Errore lettura configurazione piattaforma:', error);
+            return res.status(500).json({ error: 'Errore lettura configurazione' });
+        }
+    },
 
     // GET /public/piattaforma — pubblico: serve alla pagina di login prima dell'accesso
     async getPublic(req, res) {
@@ -97,10 +133,15 @@ module.exports = {
             if (body.descrizione_html !== undefined) {
                 updates.descrizione_html = sanitizeDescrizioneHtml(body.descrizione_html);
             }
+            if (body.registrazione_ccn !== undefined) {
+                const { list, error } = parseEmailList(body.registrazione_ccn);
+                if (error) return res.status(400).json({ error, field: 'registrazione_ccn' });
+                updates.registrazione_ccn = list;
+            }
 
             const config = await getOrCreate();
             await config.update(updates);
-            return res.json(toPublic(config));
+            return res.json(toPrivate(config));
         } catch (error) {
             console.error('Errore salvataggio configurazione piattaforma:', error);
             return res.status(500).json({ error: 'Errore salvataggio configurazione' });

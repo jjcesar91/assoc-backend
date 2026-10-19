@@ -6,7 +6,8 @@ const { sendEmail } = require('./mailService');
 //   REGISTRAZIONE_MITTENTE     nome del mittente (default: GNP - Gestionale Non Profit)
 //   REGISTRAZIONE_REPLY_TO     indirizzo di risposta (default: info@tecnoconsulenza.it)
 //   REGISTRAZIONE_FIRMA        firma in fondo al messaggio
-//   REGISTRAZIONE_BCC          copia nascosta facoltativa (es. per lo staff)
+// Copia nascosta: amministratori indicati in Backoffice → Configurazione
+// (piattaforma_config.registrazione_ccn); REGISTRAZIONE_BCC nel .env come riserva.
 
 const PRODOTTO = 'GNP - Gestionale Non Profit';
 const DEFAULT_APP_URL = 'https://app.gestionalenonprofit.it/';
@@ -58,7 +59,7 @@ function buildEmailRegistrazione({ presidente, associazione, email, annoTipo, an
 
     const text = [
         `Gentile ${presidente},`,
-        `grazie per aver confermato la registrazione. L’account di “${associazione}” su ${PRODOTTO} è in fase di verifica. Riceverà conferma entro 24 ore a seguito della verifica dei dati inseriti.`,
+        `grazie per aver confermato la registrazione. L’account di “${associazione}” su ${PRODOTTO} è in fase di verifica. Riceverai conferma entro 24 ore a seguito della verifica dei dati inseriti.`,
         '',
         `Indirizzo di accesso: ${url}`,
         `Nome utente: ${email}`,
@@ -89,7 +90,7 @@ function buildEmailRegistrazione({ presidente, associazione, email, annoTipo, an
 <html lang="it"><body style="margin:0;padding:24px;background:#f5f6f8;font-family:Arial,Helvetica,sans-serif;color:#1c1b1f;font-size:15px;line-height:1.55">
 <div style="max-width:640px;margin:0 auto;background:#ffffff;border-radius:8px;padding:28px 32px">
 ${p(`Gentile ${escapeHtml(presidente)},`)}
-${p(`grazie per aver confermato la registrazione. L’account di “${escapeHtml(associazione)}” su ${PRODOTTO} è in fase di verifica. Riceverà conferma entro 24 ore a seguito della verifica dei dati inseriti.`)}
+${p(`grazie per aver confermato la registrazione. L’account di “${escapeHtml(associazione)}” su ${PRODOTTO} è in fase di verifica. Riceverai conferma entro 24 ore a seguito della verifica dei dati inseriti.`)}
 <table role="presentation" style="margin:0 0 18px;border-collapse:collapse;background:#f7f9fa;border-radius:6px;width:100%">
 <tr><td style="padding:12px 16px">
 <div><strong>Indirizzo di accesso:</strong> <a href="${escapeHtml(url)}" style="color:#0d6efd">${escapeHtml(url)}</a></div>
@@ -114,12 +115,21 @@ ${PRODOTTO}<br>Tecno Consulenza, Via G. Marconi 9/H, Treviso<br>
 // Invio (best effort: un errore viene loggato, la registrazione resta valida)
 async function inviaEmailRegistrazione(dati) {
     const { subject, html, text } = buildEmailRegistrazione(dati);
+    // Il controller è richiesto qui per evitare dipendenze circolari all'avvio
+    const { getRegistrazioneCcn } = require('../controllers/piattaformaController');
+    let bcc = [];
+    try {
+        bcc = await getRegistrazioneCcn();
+    } catch (err) {
+        console.error('[registrazione] lettura destinatari CCN fallita:', err.message);
+    }
+    if (!bcc.length && process.env.REGISTRAZIONE_BCC) bcc = process.env.REGISTRAZIONE_BCC.split(/[\s,;]+/).filter(Boolean);
     await sendEmail({
         to: dati.email,
         subject,
         html,
         text,
-        bcc: process.env.REGISTRAZIONE_BCC || undefined,
+        bcc: bcc.length ? bcc : undefined,
         // Mittente e risposta: non quelli di una società ma del prodotto
         societa: {
             denominazione: process.env.REGISTRAZIONE_MITTENTE || PRODOTTO,

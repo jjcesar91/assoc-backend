@@ -53,6 +53,7 @@ const handleUpload = (req, res, next) => {
 
 // Montato su /piattaforma dopo authenticateToken
 router.use(requireSuperuser);
+router.get('/', piattaformaController.getPrivate);
 router.put('/', piattaformaController.update);
 router.post('/:tipo', validTipo, handleUpload, piattaformaController.uploadAsset);
 router.delete('/:tipo', validTipo, piattaformaController.deleteAsset);

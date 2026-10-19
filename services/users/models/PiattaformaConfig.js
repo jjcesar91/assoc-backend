@@ -33,6 +33,12 @@ module.exports = (sequelize, DataTypes) => {
         descrizione_html: {
             type: DataTypes.TEXT,
             allowNull: true // HTML ripulito (vedi sanitizeDescrizioneHtml)
+        },
+        // PRIVATO (mai nell'endpoint pubblico): amministratori che ricevono in copia
+        // nascosta l'email di benvenuto inviata a ogni nuova registrazione.
+        registrazione_ccn: {
+            type: DataTypes.JSON,
+            allowNull: true // array di indirizzi email
         }
     }, {
         tableName: 'piattaforma_config',
