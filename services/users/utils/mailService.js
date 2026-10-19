@@ -117,12 +117,13 @@ function buildSmtpSnapshot(societa) {
  * @param {string} options.to - Recipient email address
  * @param {string} options.subject - Email subject
  * @param {string} options.html - HTML body
+ * @param {string} [options.text] - Versione in testo semplice (alternativa all'HTML)
  * @param {Object|null} options.societa - Societa instance (for custom SMTP lookup)
  * @param {string|Array<string>} [options.bcc] - Indirizzo/i in copia conoscenza nascosta (CCn)
  * @param {Array<{filename: string, content: string, encoding?: string, contentType?: string}>} [options.attachments] - Allegati (es. ricevuta PDF in base64)
  * @returns {{ fromEmail: string, fromName: string, smtpParams: Object }}
  */
-async function sendEmail({ to, subject, html, societa, bcc, attachments }) {
+async function sendEmail({ to, subject, html, text, societa, bcc, attachments }) {
     const transporter = buildTransporter(societa);
     const from = buildFromAddress(societa);
     const replyTo = buildReplyTo(societa);
@@ -134,6 +135,10 @@ async function sendEmail({ to, subject, html, societa, bcc, attachments }) {
         subject,
         html
     };
+
+    if (text) {
+        mailOptions.text = text;
+    }
 
     if (replyTo) {
         mailOptions.replyTo = replyTo;

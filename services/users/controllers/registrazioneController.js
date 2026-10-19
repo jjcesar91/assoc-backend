@@ -3,6 +3,7 @@ const { createSocietaDefaults } = require('../utils/societaDefaults');
 const { createRateLimiter, clientKey } = require('../utils/rateLimit');
 const csrf = require('../utils/csrf');
 const turnstile = require('../utils/turnstile');
+const { inviaEmailRegistrazione } = require('../utils/emailRegistrazione');
 
 const { Societa, Licenza, sequelize } = models;
 
@@ -192,6 +193,18 @@ module.exports = {
         // Dati di default della società (moduli, conto CASSA, gruppi) in background
         createSocietaDefaults(societa).catch(err => console.error('Registrazione: default società', err.message));
         console.log(`[registrazione] nuova licenza in attesa per società ${societa.id} (ip ${ip})`);
+
+        // Email di benvenuto all'indirizzo di registrazione (in background)
+        inviaEmailRegistrazione({
+            presidente: `${data.presidente_nome} ${data.presidente_cognome}`.trim(),
+            associazione: data.associazione,
+            email: data.email,
+            annoTipo: data.anno_associativo_tipo,
+            annoInizio: data.anno_associativo_inizio,
+            origin: req.headers.origin,
+        })
+            .then(() => console.log(`[registrazione] email inviata a ${data.email}`))
+            .catch(err => console.error(`[registrazione] invio email a ${data.email} fallito:`, err.message));
         return res.status(201).json({ ok: true });
     },
 };
