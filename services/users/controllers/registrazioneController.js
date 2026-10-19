@@ -101,7 +101,7 @@ module.exports = {
         if (error) return res.status(400).json({ error, field });
 
         // Turnstile dopo la validazione: il token è monouso, non va sprecato per un campo mancante
-        if (!(await turnstile.verificaTurnstile(req.body?.turnstileToken, ip))) {
+        if (!(await turnstile.verificaTurnstile(req.body?.turnstileToken, ip, 'registrazione'))) {
             return res.status(400).json({ error: 'Verifica anti-bot non superata: riprova.', code: 'TURNSTILE' });
         }
 
