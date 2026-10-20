@@ -80,6 +80,11 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: true,
       defaultValue: null   // valorizzato sulle righe degli amministratori di licenza (una per società della licenza)
     },
+    benvenuto_inviato_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      defaultValue: null   // email "Benvenuto e primi passi" già inviata (dopo la prima password)
+    },
     sessions_revoked_at: {
       type: DataTypes.DATE,
       allowNull: true,

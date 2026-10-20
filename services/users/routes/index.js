@@ -8,6 +8,8 @@ const licenzeRoutes = require('./licenzeRoutes');
 const piattaformaController = require('../controllers/piattaformaController');
 const licenzeController = require('../controllers/licenzeController');
 const registrazioneController = require('../controllers/registrazioneController');
+const emailTemplateController = require('../controllers/emailTemplateController');
+const emailTemplateRoutes = require('./emailTemplateRoutes');
 const authenticateToken = require('../middleware/auth');
 const requireInternal = require('../middleware/requireInternal');
 const InternalController = require('../controllers/internalController');
@@ -24,6 +26,7 @@ router.post('/internal/ricevuta-uploaded', requireInternal, InternalController.r
 router.get('/internal/licenze-stato', requireInternal, licenzeController.internalStato);
 router.get('/internal/societa-licenze', requireInternal, licenzeController.internalSocietaLicenze);
 router.get('/internal/licenza-limiti', requireInternal, licenzeController.internalLimiti);
+router.post('/internal/email/benvenuto', requireInternal, emailTemplateController.internalBenvenuto);
 
 // --- Rotte PUBBLICHE (senza autenticazione) — pagina /ricevuta-telematica/:societaId ---
 // Devono stare PRIMA di router.use(authenticateToken).
@@ -44,6 +47,7 @@ router.use('/societa', societaRoutes);
 router.use('/automazioni', automazioneRoutes);
 router.use('/piattaforma', piattaformaRoutes); // solo superuser
 router.use('/licenze', licenzeRoutes); // solo superuser
+router.use('/email-template', emailTemplateRoutes); // solo superuser
 // Piano e limiti della licenza della società corrente (tutti gli utenti autenticati)
 router.get('/licenza-corrente', licenzeController.corrente);
 

@@ -890,10 +890,11 @@ exports.completePasswordReset = async (req, res) => {
                 where: { userId: user.id, usedAt: null },
                 transaction,
             });
-            return user.email;
+            return { email: user.email, licenzaId: user.licenzaId, nome: [user.nome, user.cognome].filter(Boolean).join(' ') };
         });
         if (!email) return res.status(400).json({ error: INVALID_LINK_ERROR });
-        res.json({ ok: true, email });
+        inviaBenvenutoSePrimoAccesso(email, req.headers.origin);
+        res.json({ ok: true, email: email.email });
     } catch (error) {
         console.error('completePasswordReset:', error);
         res.status(400).json({ error: formatErrorMessage(error) });
@@ -1091,6 +1092,27 @@ exports.adminProvisioningSocietaLicenza = async (req, res) => {
         res.status(error.status || 400).json({ error: formatErrorMessage(error) });
     }
 };
+
+// Prima password impostata da un amministratore di licenza: email "Benvenuto e
+// primi passi" (servizio users), una sola volta per persona e licenza.
+async function inviaBenvenutoSePrimoAccesso({ email, licenzaId, nome }, origin) {
+    if (!licenzaId) return;
+    try {
+        const where = { [Op.and]: [emailWhere(email), { licenzaId }] };
+        const gia = await User.count({ where: { [Op.and]: [...where[Op.and], { benvenuto_inviato_at: { [Op.ne]: null } }] } });
+        if (gia) return;
+        const usersUrl = process.env.USERS_SERVICE_URL || 'http://users_ms:3000';
+        const r = await fetch(`${usersUrl}/api/internal/email/benvenuto`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-internal-secret': process.env.INTERNAL_API_SECRET || 'internal_secret_change_me' },
+            body: JSON.stringify({ licenzaId, email, nome, origin }),
+        });
+        if (!r.ok) throw new Error(`users-service ha risposto ${r.status}`);
+        await User.update({ benvenuto_inviato_at: new Date() }, { where, hooks: false, validate: false });
+    } catch (err) {
+        console.error(`[benvenuto] email a ${email} non inviata:`, err.message);
+    }
+}
 
 // POST /internal/licenze/:licenzaId/link-attivazione (dal servizio users, all'attivazione
 // della licenza): un link "imposta password" per ogni amministratore della licenza.
