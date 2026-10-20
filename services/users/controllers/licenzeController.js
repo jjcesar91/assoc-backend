@@ -2,6 +2,7 @@ const { Op } = require('sequelize');
 const models = require('../models');
 const { toDateOnly } = require('../utils/licenze');
 const { getLicenzaContext, contaSociLicenza } = require('../utils/licenzaContext');
+const { inviaEmailAttivazione } = require('../utils/emailAttivazione');
 
 const { Licenza, Societa } = models;
 
@@ -114,8 +115,20 @@ module.exports = {
             if (inizio && scadenza && scadenza < inizio) {
                 return res.status(400).json({ error: 'La data di scadenza è precedente alla data di inizio' });
             }
+            // Prima attivazione (registrazione in attesa → attiva): email agli
+            // amministratori con piano e link per impostare la password
+            const primaAttivazione = licenza.stato === 'in_attesa' && updates.stato === 'attiva';
             await licenza.update(updates);
-            return res.json(licenza);
+            if (!primaAttivazione) return res.json(licenza);
+            let email_attivazione;
+            try {
+                email_attivazione = await inviaEmailAttivazione({ licenza, origin: req.headers.origin });
+                console.log(`[licenze] licenza ${licenza.id} attivata: email a ${email_attivazione.inviate.join(', ') || 'nessuno'}`);
+            } catch (err) {
+                console.error(`[licenze] licenza ${licenza.id} attivata, email di attivazione non inviate:`, err.message);
+                email_attivazione = { inviate: [], errori: [{ email: null, errore: err.message }] };
+            }
+            return res.json({ ...licenza.toJSON(), email_attivazione });
         } catch (error) {
             console.error('Errore salvataggio licenza:', error);
             return res.status(400).json({ error: error.message || 'Errore salvataggio licenza' });

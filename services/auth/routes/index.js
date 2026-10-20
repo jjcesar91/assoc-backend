@@ -14,6 +14,7 @@ router.get('/internal/admin-emails', requireInternal, authController.internalAdm
 // Registrazione dal sito (chiamata dal servizio users)
 router.post('/internal/registrazione-admin/verifica', requireInternal, authController.internalVerificaRegistrazione);
 router.post('/internal/registrazione-admin', requireInternal, authController.internalRegistrazioneAdmin);
+router.post('/internal/licenze/:licenzaId/link-attivazione', requireInternal, authController.internalLinkAttivazione);
 
 router.post('/register', authController.register);
 router.post('/login', authController.login);

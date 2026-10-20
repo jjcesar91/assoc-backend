@@ -904,9 +904,11 @@ exports.completePasswordReset = async (req, res) => {
 // Registrazione dal sito (chiamate interne dal servizio users)
 // ---------------------------------------------------------------------------
 
-// Una persona può registrare una sola volta la stessa email come gestionale
+// Una persona può registrare una sola volta la stessa email come gestionale.
+// La password non si sceglie più nel form: viene impostata col link inviato
+// all'attivazione della licenza (se presente viene comunque validata).
 async function verificaRegistrazione(email, password) {
-    validatePasswordOrThrow(password);
+    if (password !== undefined && password !== null && password !== '') validatePasswordOrThrow(password);
     const esistente = await User.findOne({ where: { [Op.and]: [emailWhere(email), { role: { [Op.ne]: 'socio' } }] } });
     if (esistente) {
         const e = new Error('Email già registrata: accedi con le tue credenziali o contatta l\'assistenza.');
@@ -939,7 +941,8 @@ exports.internalRegistrazioneAdmin = async (req, res) => {
         if (!email || !societaId || !licenzaId) return res.status(400).json({ error: 'Dati mancanti' });
         await verificaRegistrazione(email, password);
         const user = await User.create({
-            email, password, nome: nome || null, cognome: cognome || null, telefono: telefono || null,
+            email, password: password || generateUnusablePassword(),
+            nome: nome || null, cognome: cognome || null, telefono: telefono || null,
             role: 'admin', attivo: true, societaId, licenzaId,
         });
         res.status(201).json({ id: user.id });
@@ -1086,5 +1089,27 @@ exports.adminProvisioningSocietaLicenza = async (req, res) => {
         res.json({ amministratori: persone.length });
     } catch (error) {
         res.status(error.status || 400).json({ error: formatErrorMessage(error) });
+    }
+};
+
+// POST /internal/licenze/:licenzaId/link-attivazione (dal servizio users, all'attivazione
+// della licenza): un link "imposta password" per ogni amministratore della licenza.
+// → [{ email, nome, cognome, token, expiresAt }]
+exports.internalLinkAttivazione = async (req, res) => {
+    try {
+        const licenzaId = parseInt(req.params.licenzaId, 10);
+        if (!licenzaId) return res.status(400).json({ error: 'licenzaId non valido' });
+        const rows = await User.findAll({ where: { licenzaId, attivo: true }, order: [['id', 'ASC']] });
+        const perEmail = new Map();
+        rows.forEach(u => { if (!perEmail.has(u.email.toLowerCase())) perEmail.set(u.email.toLowerCase(), u); });
+        const out = [];
+        for (const u of perEmail.values()) {
+            const { token, expiresAt } = await createResetToken(PasswordResetToken, u.id, null);
+            out.push({ email: u.email, nome: u.nome, cognome: u.cognome, token, expiresAt });
+        }
+        res.json(out);
+    } catch (error) {
+        console.error('internalLinkAttivazione:', error);
+        res.status(500).json({ error: 'Errore generazione link' });
     }
 };

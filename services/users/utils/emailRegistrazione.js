@@ -63,7 +63,7 @@ function buildEmailRegistrazione({ presidente, associazione, email, annoTipo, an
         '',
         `Indirizzo di accesso: ${url}`,
         `Nome utente: ${email}`,
-        'Password: quella inserita in fase di registrazione',
+        'Password: la imposterai con il link che ti invieremo all’attivazione dell’account',
         '',
         'Prima di emettere la prima ricevuta conviene sistemare alcune impostazioni. Te le indico nell’ordine in cui farle.',
         '',
@@ -95,7 +95,7 @@ ${p(`grazie per aver confermato la registrazione. L’account di “${escapeHtml
 <tr><td style="padding:12px 16px">
 <div><strong>Indirizzo di accesso:</strong> <a href="${escapeHtml(url)}" style="color:#0d6efd">${escapeHtml(url)}</a></div>
 <div><strong>Nome utente:</strong> ${escapeHtml(email)}</div>
-<div><strong>Password:</strong> quella inserita in fase di registrazione</div>
+<div><strong>Password:</strong> la imposterai con il link che ti invieremo all’attivazione dell’account</div>
 </td></tr></table>
 ${p('Prima di emettere la prima ricevuta conviene sistemare alcune impostazioni. Te le indico nell’ordine in cui farle.')}
 <ol style="margin:0 0 18px;padding-left:22px">${passi.map(li).join('')}</ol>

@@ -34,8 +34,9 @@ const str = (v) => (typeof v === 'string' ? v.trim() : '');
 
 function validate(body) {
     const d = {};
+    // Tutti i campi testuali in maiuscolo, tranne l'email
     for (const [k, max] of Object.entries(LIMITS)) {
-        d[k] = str(body[k]);
+        d[k] = k === 'email' ? str(body[k]) : str(body[k]).toUpperCase();
         if (d[k].length > max) return { error: `Massimo ${max} caratteri`, field: k };
     }
     d.tipologia = str(body.tipologia).toUpperCase();
@@ -59,11 +60,7 @@ function validate(body) {
     if (d.anno_associativo_tipo === 'personalizzato' && !GG_MM.test(d.anno_associativo_inizio)) {
         return { error: 'Inizio anno associativo non valido', field: 'anno_associativo_inizio' };
     }
-    if (typeof body.password !== 'string' || body.password !== body.password_conferma) {
-        return { error: 'Le password non coincidono', field: 'password_conferma' };
-    }
     if (body.privacy !== true) return { error: 'È necessario accettare l\'informativa privacy', field: 'privacy' };
-    d.password = body.password;
     return { data: d };
 }
 
@@ -76,7 +73,8 @@ module.exports = {
     },
 
     // POST /public/registrazione — registrazione dal sito: licenza Free "in attesa",
-    // prima società e utente amministratore (email/password del form). L'accesso
+    // prima società e utente amministratore (email del form, password impostata col
+    // link inviato all'attivazione). L'accesso
     // al gestionale resta bloccato finché la licenza non viene attivata dal Backoffice.
     async registra(req, res) {
         // Campo trappola: invisibile agli utenti, compilato dai bot
@@ -106,17 +104,17 @@ module.exports = {
             return res.status(400).json({ error: 'Verifica anti-bot non superata: riprova.', code: 'TURNSTILE' });
         }
 
-        // Verifica preliminare (policy password, email libera) prima di scrivere
+        // Verifica preliminare (email non ancora registrata) prima di scrivere
         try {
             const check = await fetch(`${authUrl()}/api/internal/registrazione-admin/verifica`, {
                 method: 'POST',
                 headers: internalHeaders(),
-                body: JSON.stringify({ email: data.email, password: data.password }),
+                body: JSON.stringify({ email: data.email }),
             });
             if (!check.ok) {
                 const err = await check.json().catch(() => ({}));
                 const msg = err.error || 'Dati di accesso non validi';
-                return res.status(400).json({ error: msg, field: /email/i.test(msg) ? 'email' : 'password' });
+                return res.status(400).json({ error: msg, field: 'email' });
             }
         } catch (e) {
             console.error('Registrazione: auth non raggiungibile', e.message);
@@ -168,9 +166,9 @@ module.exports = {
                 const r = await fetch(`${authUrl()}/api/internal/registrazione-admin`, {
                     method: 'POST',
                     headers: internalHeaders(),
+                    // Senza password: la imposterà col link inviato all'attivazione della licenza
                     body: JSON.stringify({
                         email: data.email,
-                        password: data.password,
                         nome: data.referente_nome || data.presidente_nome,
                         cognome: data.referente_nome ? null : data.presidente_cognome,
                         telefono: data.referente_telefono || data.telefono,
