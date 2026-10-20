@@ -17,6 +17,9 @@ const internalHeaders = () => ({
     'x-internal-secret': process.env.INTERNAL_API_SECRET || 'internal_secret_change_me',
 });
 
+// Nomi salvati in maiuscolo → iniziali maiuscole nel saluto (MARIO ROSSI → Mario Rossi)
+const nomeProprio = (v) => String(v || '').toLowerCase().replace(/(^|[\s'’-])(\p{L})/gu, (m, sep, c) => sep + c.toUpperCase()).trim();
+
 const escapeHtml = (v) => String(v ?? '')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -38,7 +41,7 @@ const LINK_OMESSO = '[link personale per impostare la password: inviato solo al 
 function buildEmailAttivazione({ nome, associazione, piano, email, link, scadenza, url, copia = false }) {
     const pianoNome = NOMI_PIANI[piano] || piano;
     const firma = process.env.REGISTRAZIONE_FIRMA || 'Il team di GNP';
-    const saluto = nome ? `Ciao ${nome},` : 'Ciao,';
+    const saluto = nome ? `Ciao ${nomeProprio(nome)},` : 'Ciao,';
     const subject = `${copia ? '[Copia] ' : ''}La licenza di ${associazione} è attiva: imposta la tua password`;
     const notaCopia = `Copia per conoscenza dell'email inviata a ${email}.`;
 

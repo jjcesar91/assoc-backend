@@ -12,6 +12,9 @@ const { sendEmail } = require('./mailService');
 const PRODOTTO = 'GNP - Gestionale Non Profit';
 const DEFAULT_APP_URL = 'https://app.gestionalenonprofit.it/';
 
+// Nomi salvati in maiuscolo → iniziali maiuscole nel saluto (MARIO ROSSI → Mario Rossi)
+const nomeProprio = (v) => String(v || '').toLowerCase().replace(/(^|[\s'’-])(\p{L})/gu, (m, sep, c) => sep + c.toUpperCase()).trim();
+
 const escapeHtml = (v) => String(v ?? '')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -50,6 +53,7 @@ const PASSI_SUCCESSIVI = [
 ];
 
 function buildEmailRegistrazione({ presidente, associazione, email, annoTipo, annoInizio, origin }) {
+    presidente = nomeProprio(presidente);
     const url = appUrl(origin);
     const anno = annoAssociativoText(annoTipo, annoInizio);
     const firma = process.env.REGISTRAZIONE_FIRMA || 'Il team di GNP';
