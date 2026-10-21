@@ -6,6 +6,7 @@ const db = require('./models');
 const { backfillLicenze } = require('./utils/licenze');
 const routes = require('./routes');
 const { runAutomazioniCheck } = require('./jobs/runAutomazioni');
+const { chiudiTicketRisolti } = require('./jobs/chiudiTicketRisolti');
 require('dotenv').config();
 
 const app = express();
@@ -72,6 +73,11 @@ db.sequelize.authenticate()
     // per non interferire con l'operatività.
     cron.schedule('0 6 * * *', () => {
       runAutomazioniCheck().catch(err => console.error('Errore job automazioni:', err));
+    }, { timezone: 'Europe/Rome' });
+
+    // Ticket risolti senza risposta del cliente: chiusura automatica (vedi utils/ticket.js)
+    cron.schedule('30 6 * * *', () => {
+      chiudiTicketRisolti().catch(err => console.error('Errore job chiusura ticket:', err));
     }, { timezone: 'Europe/Rome' });
   })
   .catch(err => {

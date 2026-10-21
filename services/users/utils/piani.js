@@ -11,6 +11,7 @@ const SENZA_LIMITI = {
     bilancio: true,
     ordini_prodotti_generici: true,
     creazione_utenti: true,
+    assistenza: true,
 };
 
 const PIANI_LIMITI = {
@@ -22,6 +23,7 @@ const PIANI_LIMITI = {
         bilancio: false,
         ordini_prodotti_generici: false,
         creazione_utenti: false,
+        assistenza: false,
     },
     pro: { ...SENZA_LIMITI },
     advanced: { ...SENZA_LIMITI },

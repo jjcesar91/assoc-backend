@@ -146,6 +146,8 @@ async function main() {
   await reportCount(users, 'comunicazioni', 'SELECT COUNT(*) n FROM comunicazioni WHERE socio_id = ANY($1::int[])', [socioIds]);
   await reportCount(users, 'automazioni_invii', 'SELECT COUNT(*) n FROM automazioni_invii WHERE societa_id = ANY($1::int[])', [societaIds]);
   await reportCount(users, 'socios', 'SELECT COUNT(*) n FROM socios WHERE societa_id = ANY($1::int[])', [societaIds]);
+  await reportCount(users, 'ticket_messaggi', 'SELECT COUNT(*) n FROM ticket_messaggi WHERE ticket_id IN (SELECT id FROM tickets WHERE societa_id = ANY($1::int[]))', [societaIds]);
+  await reportCount(users, 'tickets', 'SELECT COUNT(*) n FROM tickets WHERE societa_id = ANY($1::int[])', [societaIds]);
   await reportCount(users, 'users (secondario, orfani)', 'SELECT COUNT(*) n FROM users WHERE id = ANY($1::int[])', [orphanUserIds]);
   await reportCount(users, 'automazioni_config', 'SELECT COUNT(*) n FROM automazioni_config WHERE societa_id = ANY($1::int[])', [societaIds]);
   await reportCount(users, '"SocietaAffiliazioni"', 'SELECT COUNT(*) n FROM "SocietaAffiliazioni" WHERE societa_id = ANY($1::int[])', [societaIds]);
@@ -185,6 +187,7 @@ async function main() {
   await reportCount(activities, '"CorsoPresenze"', 'SELECT COUNT(*) n FROM "CorsoPresenze" WHERE "corsoId" = ANY($1::int[])', [corsoIds]);
   await reportCount(activities, '"CorsoIscrizioni"', 'SELECT COUNT(*) n FROM "CorsoIscrizioni" WHERE "corsoId" = ANY($1::int[])', [corsoIds]);
   await reportCount(activities, '"CorsoOrari"', 'SELECT COUNT(*) n FROM "CorsoOrari" WHERE "corsoId" = ANY($1::int[])', [corsoIds]);
+  await reportCount(activities, '"CorsoAbbonamenti"', 'SELECT COUNT(*) n FROM "CorsoAbbonamenti" WHERE "corsoId" = ANY($1::int[])', [corsoIds]);
   console.log('  "Corsi": ' + corsoIds.length);
   await reportCount(activities, '"Aree"', 'SELECT COUNT(*) n FROM "Aree" a JOIN "Strutture" s ON s.id = a."strutturaId" WHERE s."societaId" = ANY($1::int[])', [societaIds]);
   await reportCount(activities, '"Strutture"', 'SELECT COUNT(*) n FROM "Strutture" WHERE "societaId" = ANY($1::int[])', [societaIds]);
@@ -247,6 +250,7 @@ async function main() {
     { sql: 'DELETE FROM "CorsoPresenze" WHERE "corsoId" = ANY($1::int[])', params: [corsoIds], desc: '"CorsoPresenze"' },
     { sql: 'DELETE FROM "CorsoIscrizioni" WHERE "corsoId" = ANY($1::int[])', params: [corsoIds], desc: '"CorsoIscrizioni"' },
     { sql: 'DELETE FROM "CorsoOrari" WHERE "corsoId" = ANY($1::int[])', params: [corsoIds], desc: '"CorsoOrari"' },
+    { sql: 'DELETE FROM "CorsoAbbonamenti" WHERE "corsoId" = ANY($1::int[])', params: [corsoIds], desc: '"CorsoAbbonamenti"' },
     { sql: 'DELETE FROM "Corsi" WHERE "societaId" = ANY($1::int[])', params: [societaIds], desc: '"Corsi"' },
     { sql: 'DELETE FROM "Aree" WHERE "strutturaId" IN (SELECT id FROM "Strutture" WHERE "societaId" = ANY($1::int[]))', params: [societaIds], desc: '"Aree"' },
     { sql: 'DELETE FROM "Strutture" WHERE "societaId" = ANY($1::int[])', params: [societaIds], desc: '"Strutture"' },
@@ -274,6 +278,8 @@ async function main() {
     { sql: 'DELETE FROM comunicazioni WHERE socio_id = ANY($1::int[])', params: [socioIds], desc: 'comunicazioni' },
     { sql: 'DELETE FROM automazioni_invii WHERE societa_id = ANY($1::int[])', params: [societaIds], desc: 'automazioni_invii' },
     { sql: 'DELETE FROM socios WHERE societa_id = ANY($1::int[])', params: [societaIds], desc: 'socios' },
+    { sql: 'DELETE FROM ticket_messaggi WHERE ticket_id IN (SELECT id FROM tickets WHERE societa_id = ANY($1::int[]))', params: [societaIds], desc: 'ticket_messaggi' },
+    { sql: 'DELETE FROM tickets WHERE societa_id = ANY($1::int[])', params: [societaIds], desc: 'tickets' },
     { sql: 'DELETE FROM users WHERE id = ANY($1::int[])', params: [orphanUserIds], desc: 'users (secondario)' },
     { sql: 'DELETE FROM automazioni_config WHERE societa_id = ANY($1::int[])', params: [societaIds], desc: 'automazioni_config' },
     { sql: 'DELETE FROM "SocietaAffiliazioni" WHERE societa_id = ANY($1::int[])', params: [societaIds], desc: '"SocietaAffiliazioni"' },

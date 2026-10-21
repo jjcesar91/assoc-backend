@@ -22,6 +22,17 @@ const CAMPI_COMUNI = [
     ['{{ANNO_ASSOCIATIVO}}', 'Anno associativo', "Anno associativo indicato nella registrazione"],
 ];
 
+// Segnaposto delle email dei ticket di assistenza
+const CAMPI_TICKET = [
+    ['{{NUMERO_TICKET}}', 'Numero ticket', 'Numero del ticket (es. #42)'],
+    ['{{OGGETTO_TICKET}}', 'Oggetto', 'Oggetto del ticket'],
+    ['{{ASSOCIAZIONE}}', 'Associazione', 'Società che ha aperto il ticket'],
+    ['{{AUTORE}}', 'Autore', "Email dell'utente che ha aperto il ticket"],
+    ['{{STATO_TICKET}}', 'Stato', 'Stato del ticket dopo il messaggio'],
+    ['{{MESSAGGIO}}', 'Messaggio', "Testo dell'ultimo messaggio"],
+    ['{{LINK_TICKET}}', 'Link al ticket', 'Pulsante per aprire il ticket nel gestionale'],
+];
+
 const DEFINIZIONI = {
     registrazione_ricevuta: {
         nome: 'Registrazione ricevuta',
@@ -74,6 +85,32 @@ ${FIRMA}`,
 </ul>
 ${FIRMA}`,
     },
+    ticket_risposta: {
+        nome: 'Ticket: risposta del supporto',
+        quando: "Inviata all'utente che ha aperto il ticket quando il supporto risponde (mai per le note interne).",
+        campi: CAMPI_TICKET,
+        oggetto: '[Ticket {{NUMERO_TICKET}}] Nuova risposta: {{OGGETTO_TICKET}}',
+        corpo: `<p>Ciao,</p>
+<p>il supporto ha risposto al ticket {{NUMERO_TICKET}} “{{OGGETTO_TICKET}}”:</p>
+<blockquote style="margin:12px 0;padding:10px 14px;border-left:3px solid #0d6efd;background:#f5f8ff">{{MESSAGGIO}}</blockquote>
+<p>Stato del ticket: <b>{{STATO_TICKET}}</b>.</p>
+<p>Per rispondere apri il ticket nel gestionale (menu Assistenza):</p>
+<p>{{LINK_TICKET}}</p>
+<p>Il team di GNP</p>`,
+    },
+    ticket_supporto: {
+        nome: 'Ticket: nuovo messaggio da un cliente',
+        quando: 'Inviata al supporto quando un cliente apre un ticket o risponde in un ticket.',
+        destinatariCcn: true,
+        ccnLabel: 'Destinatari (supporto)',
+        ccnHint: "Un indirizzo per riga, massimo 20. Ricevono l'avviso di ogni nuovo ticket e di ogni risposta dei clienti; senza destinatari l'avviso non viene inviato.",
+        campi: CAMPI_TICKET,
+        oggetto: '[Ticket {{NUMERO_TICKET}}] {{ASSOCIAZIONE}}: {{OGGETTO_TICKET}}',
+        corpo: `<p>Nuovo messaggio da {{AUTORE}} ({{ASSOCIAZIONE}}) nel ticket {{NUMERO_TICKET}} “{{OGGETTO_TICKET}}”:</p>
+<blockquote style="margin:12px 0;padding:10px 14px;border-left:3px solid #0d6efd;background:#f5f8ff">{{MESSAGGIO}}</blockquote>
+<p>Stato: <b>{{STATO_TICKET}}</b></p>
+<p>{{LINK_TICKET}}</p>`,
+    },
 };
 
 const CHIAVI = Object.keys(DEFINIZIONI);
@@ -84,6 +121,9 @@ const VALORI_ESEMPIO = {
     NOME_UTENTE: 'info@aquiletreviso.it', INDIRIZZO_ACCESSO: 'https://app.gestionalenonprofit.it/',
     PIANO: 'Free', ANNO_ASSOCIATIVO: 'anno sportivo (1 settembre - 31 agosto)',
     LINK_PASSWORD: 'https://app.gestionalenonprofit.it/reset-password#t=esempio', SCADENZA_LINK: '23 ottobre 2026 alle ore 18:30',
+    NUMERO_TICKET: '#42', OGGETTO_TICKET: 'Errore nella stampa della ricevuta', AUTORE: 'info@aquiletreviso.it',
+    STATO_TICKET: 'In attesa di risposta', MESSAGGIO: 'Buongiorno,\nabbiamo verificato: ora la stampa funziona correttamente.',
+    LINK_TICKET: 'https://app.gestionalenonprofit.it/assistenza?ticket=42',
 };
 
 const escapeHtml = (v) => String(v ?? '')
@@ -109,6 +149,8 @@ function sostituisci(template, valori, { html, copia }) {
             if (copia) return html ? `<i>${escapeHtml(LINK_OMESSO)}</i>` : LINK_OMESSO;
             return html ? bottone(v, 'Imposta la password') : v;
         }
+        if (k === 'LINK_TICKET' && html) return bottone(v, 'Apri il ticket');
+        if (k === 'MESSAGGIO' && html) return escapeHtml(v).replace(/\n/g, '<br>');
         if (k === 'INDIRIZZO_ACCESSO' && html) return `<a href="${escapeHtml(v)}" style="color:#0d6efd">${escapeHtml(v)}</a>`;
         return html ? escapeHtml(v) : String(v ?? '');
     });
@@ -160,6 +202,8 @@ async function getTemplate(models, chiave) {
         oggetto: row?.oggetto || def.oggetto,
         corpo_html: row?.corpo_html || def.corpo,
         ccn,
+        ccn_label: def.ccnLabel || null,
+        ccn_hint: def.ccnHint || null,
         personalizzato: !!(row?.oggetto || row?.corpo_html),
         default_oggetto: def.oggetto,
         default_corpo_html: def.corpo,
@@ -170,7 +214,8 @@ function rendi({ oggetto, corpo_html }, valori, { copia = false, destinatario = 
     const corpo = sostituisci(corpo_html, valori, { html: true, copia });
     const subject = `${copia ? '[Copia] ' : ''}${sostituisci(oggetto, valori, { html: false, copia })}`;
     const notaCopia = copia && destinatario ? `Copia per conoscenza dell'email inviata a ${destinatario}.` : null;
-    const corpoTesto = htmlToText(sostituisci(corpo_html, valori, { html: false, copia }));
+    // Prima il template in testo, poi i valori: i testi scritti dagli utenti restano intatti
+    const corpoTesto = sostituisci(htmlToText(corpo_html), valori, { html: false, copia });
     return {
         subject,
         html: wrapHtml(corpo, notaCopia),
@@ -244,7 +289,16 @@ async function inviaEmail(models, chiave, { to, valori }) {
     return { copia };
 }
 
+// Email con destinatari = lista configurata (avvisi al supporto): niente se la lista è vuota
+async function inviaEmailAiDestinatari(models, chiave, { valori }) {
+    const tpl = await getTemplate(models, chiave);
+    if (!tpl.ccn.length) return { inviata: false };
+    const msg = rendi(tpl, valori);
+    await sendEmail({ bcc: tpl.ccn, subject: msg.subject, html: msg.html, text: msg.text, societa: MITTENTE() });
+    return { inviata: true, destinatari: tpl.ccn.length };
+}
+
 module.exports = {
     CHIAVI, DEFINIZIONI, VALORI_ESEMPIO,
-    getTemplate, rendi, inviaEmail, nomeProprio, valoriLicenza, appUrl, sanitizeCorpo: sanitizeDescrizioneHtml,
+    getTemplate, rendi, inviaEmail, inviaEmailAiDestinatari, nomeProprio, valoriLicenza, appUrl, sanitizeCorpo: sanitizeDescrizioneHtml,
 };

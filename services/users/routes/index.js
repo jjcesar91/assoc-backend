@@ -10,6 +10,7 @@ const licenzeController = require('../controllers/licenzeController');
 const registrazioneController = require('../controllers/registrazioneController');
 const emailTemplateController = require('../controllers/emailTemplateController');
 const emailTemplateRoutes = require('./emailTemplateRoutes');
+const ticketRoutes = require('./ticketRoutes');
 const authenticateToken = require('../middleware/auth');
 const requireInternal = require('../middleware/requireInternal');
 const InternalController = require('../controllers/internalController');
@@ -48,6 +49,7 @@ router.use('/automazioni', automazioneRoutes);
 router.use('/piattaforma', piattaformaRoutes); // solo superuser
 router.use('/licenze', licenzeRoutes); // solo superuser
 router.use('/email-template', emailTemplateRoutes); // solo superuser
+router.use('/tickets', ticketRoutes); // Assistenza (utenti) e Backoffice → Ticket (superuser)
 // Piano e limiti della licenza della società corrente (tutti gli utenti autenticati)
 router.get('/licenza-corrente', licenzeController.corrente);
 
