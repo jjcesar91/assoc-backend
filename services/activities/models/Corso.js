@@ -10,6 +10,7 @@ module.exports = (sequelize, DataTypes) => {
       Corso.belongsTo(models.Staff, { foreignKey: 'staffId', as: 'staff' });
       Corso.hasMany(models.CorsoIscrizione, { foreignKey: 'corsoId', as: 'iscrizioni' });
       Corso.hasMany(models.CorsoOrario, { foreignKey: 'corsoId', as: 'orari', onDelete: 'CASCADE' });
+      Corso.hasMany(models.CorsoAbbonamento, { foreignKey: 'corsoId', as: 'abbonamentiLink' });
     }
   }
   Corso.init({
@@ -63,9 +64,20 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.TEXT,
       allowNull: true
     },
+    // Gli abbonamenti che danno accesso al corso vivono in CorsoAbbonamenti (uno o più).
+    // abbonamentoId resta come mirror del PRIMO collegamento, per retrocompatibilità.
     abbonamentoId: {
       type: DataTypes.INTEGER,
-      allowNull: false
+      allowNull: true
+    },
+    abbonamentoIds: {
+      type: DataTypes.VIRTUAL,
+      get() {
+        const links = this.getDataValue('abbonamentiLink');
+        if (Array.isArray(links)) return links.map(l => l.abbonamentoId);
+        const legacy = this.getDataValue('abbonamentoId');
+        return legacy ? [legacy] : [];
+      }
     }
   }, {
     sequelize,

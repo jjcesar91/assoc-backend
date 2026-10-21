@@ -1,4 +1,4 @@
-const { CorsoIscrizione, Corso, CorsoOrario, Attivita, Struttura, Area, Staff } = require('../models');
+const { CorsoIscrizione, Corso, CorsoOrario, CorsoAbbonamento, Attivita, Struttura, Area, Staff } = require('../models');
 
 const CORSO_INCLUDES = [
     { model: Attivita, as: 'attivita', attributes: ['id', 'descrizione', 'colore'] },
@@ -6,6 +6,7 @@ const CORSO_INCLUDES = [
     { model: Area, as: 'area', attributes: ['id', 'descrizione'] },
     { model: Staff, as: 'staff', attributes: ['id', 'nome', 'cognome'] },
     { model: CorsoOrario, as: 'orari', attributes: ['id', 'giorno', 'oraInizio', 'durataMinuti'] },
+    { model: CorsoAbbonamento, as: 'abbonamentiLink', attributes: ['abbonamentoId'] },
 ];
 
 // GET /api/corsi/iscrizioni?societaId=X  – tutte le iscrizioni dei corsi di una società

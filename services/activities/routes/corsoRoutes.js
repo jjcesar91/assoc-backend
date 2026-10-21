@@ -5,6 +5,11 @@ const corsoIscrizioneController = require('../controllers/corsoIscrizioneControl
 const presenzaController = require('../controllers/presenzaController');
 
 router.get('/', corsoController.getAll);
+
+// Corsi inclusi in un abbonamento (prima di /:id)
+router.get('/abbonamenti/:abbonamentoId', corsoController.getByAbbonamento);
+router.put('/abbonamenti/:abbonamentoId', corsoController.setByAbbonamento);
+
 router.post('/', corsoController.create);
 router.put('/:id', corsoController.update);
 router.delete('/:id', corsoController.destroy);

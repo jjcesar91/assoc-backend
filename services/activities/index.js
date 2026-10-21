@@ -3,6 +3,7 @@ const cors = require('cors');
 const db = require('./models');
 const routes = require('./routes');
 const backfillCorsoOrari = require('./scripts/backfillCorsoOrari');
+const backfillCorsoAbbonamenti = require('./scripts/backfillCorsoAbbonamenti');
 require('dotenv').config();
 
 const app = express();
@@ -33,6 +34,12 @@ db.sequelize.sync({ alter: true })
     } catch (err) {
       // Non bloccare l'avvio del servizio se il backfill fallisce
       console.error('Backfill CorsoOrari fallito:', err.message);
+    }
+    try {
+      const linked = await backfillCorsoAbbonamenti(db);
+      if (linked > 0) console.log(`Backfill CorsoAbbonamenti: collegati ${linked} corsi preesistenti.`);
+    } catch (err) {
+      console.error('Backfill CorsoAbbonamenti fallito:', err.message);
     }
     app.listen(PORT, () => {
       console.log(`Activities service running on port ${PORT}`);
