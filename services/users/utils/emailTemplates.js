@@ -115,6 +115,9 @@ ${FIRMA}`,
 
 const CHIAVI = Object.keys(DEFINIZIONI);
 
+// Solo le email nate con la vecchia lista unica di Backoffice → Configurazione la ereditano
+const EREDITANO_CCN_LEGACY = ['registrazione_ricevuta', 'attivazione', 'benvenuto'];
+
 // Valori d'esempio per l'anteprima nel Backoffice
 const VALORI_ESEMPIO = {
     PRESIDENTE: 'Mario Rossi', NOME: 'Mario Rossi', ASSOCIAZIONE: 'ASD AQUILE TREVISO',
@@ -189,6 +192,7 @@ async function getTemplate(models, chiave) {
     if (!def) throw new Error(`Email sconosciuta: ${chiave}`);
     const row = await models.EmailTemplate.findByPk(chiave);
     let ccn = Array.isArray(row?.ccn) ? row.ccn : null;
+    if (ccn === null && !EREDITANO_CCN_LEGACY.includes(chiave)) ccn = [];
     if (ccn === null) {
         // Prima configurazione: eredita la lista CCN che stava in Backoffice → Configurazione
         const legacy = await models.PiattaformaConfig.findByPk(1);
