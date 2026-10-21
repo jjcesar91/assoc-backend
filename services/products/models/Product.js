@@ -62,7 +62,10 @@ module.exports = (sequelize, DataTypes) => {
     numEntries: DataTypes.INTEGER, // subscription
     season: DataTypes.STRING, // inscription, schedule
     numInstallments: DataTypes.INTEGER, // schedule
-    installments: DataTypes.JSON // schedule installments array
+    installments: DataTypes.JSON, // schedule installments array
+    // Abbonamenti: formule vendibili [{ id, durata, illimitato, ingressi, prezzo }]
+    // (vedi utils/listino.js); i corsi inclusi sono nel servizio activities.
+    listino: DataTypes.JSON
   }, {
     sequelize,
     modelName: 'Product',

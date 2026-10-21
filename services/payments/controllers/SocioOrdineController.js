@@ -71,6 +71,22 @@ async function quotaGiaPagata(ctx, socio, authHeader) {
     return !!esistente;
 }
 
+const DURATE = { '1_mese': '1 mese', '2_mesi': '2 mesi', '3_mesi': '3 mesi', '4_mesi': '4 mesi', '6_mesi': '6 mesi', '12_mesi': '12 mesi' };
+
+function etichettaFormula(f) {
+    return `${DURATE[f.durata] || f.durata} · ${f.illimitato ? 'ingressi illimitati' : `${f.ingressi} ingressi`}`;
+}
+
+// Formula del listino scelta per un abbonamento: obbligatoria se il listino ne ha più
+// di una; il prezzo arriva sempre dal listino del catalogo, mai dal client.
+function formulaAbbonamento(prodotto, listinoId) {
+    const listino = Array.isArray(prodotto.listino) ? prodotto.listino : [];
+    if (listino.length === 0) return { formula: null };
+    if (!listinoId) return listino.length === 1 ? { formula: listino[0] } : { error: `Scegli la formula per "${prodotto.description}"` };
+    const formula = listino.find(f => f.id === listinoId);
+    return formula ? { formula } : { error: `La formula scelta per "${prodotto.description}" non è più disponibile` };
+}
+
 function nominativoSocio(socio) {
     if (!socio) return '';
     if (socio.tipo_socio === 'associazione') return socio.ragione_sociale || '';
@@ -155,7 +171,7 @@ const SocioOrdineController = {
     },
 
     // POST /api/socio/ordini
-    // body: { items: [{ product_id, qty }], conto_id, note }
+    // body: { items: [{ product_id, qty, listino_id? }], conto_id, note }
     createOrdine: async (req, res) => {
         const ctx = getSocioContext(req);
         if (!ctx) return res.status(403).json({ error: 'Accesso riservato ai soci' });
@@ -197,8 +213,15 @@ const SocioOrdineController = {
                 if (!Number.isInteger(qty) || qty < 1 || qty > 99) {
                     return res.status(400).json({ error: `Quantità non valida per "${prodotto.description}"` });
                 }
-                const prezzoUnitario = parseFloat(prodotto.basePrice || 0);
+                let formula = null;
+                if (prodotto.type === 'subscription') {
+                    const scelta = formulaAbbonamento(prodotto, raw?.listino_id);
+                    if (scelta.error) return res.status(400).json({ error: scelta.error });
+                    formula = scelta.formula;
+                }
+                const prezzoUnitario = parseFloat(formula ? formula.prezzo : (prodotto.basePrice || 0));
                 const importoRiga = Math.round(prezzoUnitario * qty * 100) / 100;
+                const nome = formula ? `${prodotto.description} (${etichettaFormula(formula)})` : prodotto.description;
 
                 paymentItems.push({
                     product_id: prodotto.id,
@@ -209,8 +232,12 @@ const SocioOrdineController = {
                     periodicity_tesseramento: prodotto.type === 'tesseramento' ? (prodotto.periodicity || null) : null,
                     data_inizio_abbonamento: null,
                     data_scadenza_abbonamento: null,
+                    ...(formula ? {
+                        listino_id: formula.id,
+                        formula: { durata: formula.durata, illimitato: formula.illimitato, ingressi: formula.ingressi, descrizione: etichettaFormula(formula) },
+                    } : {}),
                 });
-                quoteParts.push(`${prodotto.description} (x${qty}) €${formatEuro(importoRiga)}`);
+                quoteParts.push(`${nome} (x${qty}) €${formatEuro(importoRiga)}`);
             }
 
             const socio = await fetchSocio(ctx.socioId, req.headers['authorization']);

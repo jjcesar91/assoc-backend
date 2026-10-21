@@ -28,8 +28,14 @@ app.use('/api', routes);
 
 // Database connection and server start
 db.sequelize.sync({ alter: true })
-  .then(() => {
+  .then(async () => {
     console.log('Database connected and synced successfully.');
+    // Abbonamenti creati prima dei listini: una formula con i dati attuali
+    try {
+      await require('./utils/listino').backfillListini(db.Product);
+    } catch (err) {
+      console.error('[listino] backfill non riuscito:', err.message);
+    }
     app.listen(PORT, () => {
       console.log(`Server is running on port ${PORT}`);
     });

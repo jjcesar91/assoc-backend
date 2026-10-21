@@ -1,4 +1,17 @@
 const { Product } = require('../models');
+const { normalizzaListino, campiDaListino } = require('../utils/listino');
+
+const activitiesUrl = () => process.env.ACTIVITIES_SERVICE_URL || 'http://activities_ms:3000';
+
+// Abbonamento: listino obbligatorio e valido; i campi legacy seguono il listino.
+// Ritorna il messaggio d'errore o null.
+function preparaAbbonamento(data) {
+    if (data.type !== 'subscription') return null;
+    const { listino, error } = normalizzaListino(data.listino);
+    if (error) return error;
+    Object.assign(data, { listino }, campiDaListino(listino));
+    return null;
+}
 
 // Convert empty strings to null to avoid type errors on INTEGER/BOOLEAN fields
 function sanitize(data) {
@@ -11,7 +24,10 @@ function sanitize(data) {
 
 exports.createProduct = async (req, res) => {
     try {
-        const product = await Product.create(sanitize(req.body));
+        const data = sanitize(req.body);
+        const errore = preparaAbbonamento(data);
+        if (errore) return res.status(400).json({ error: errore });
+        const product = await Product.create(data);
         res.status(201).json(product);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -65,7 +81,16 @@ exports.getProductById = async (req, res) => {
 
 exports.updateProduct = async (req, res) => {
     try {
-        const [updated] = await Product.update(sanitize(req.body), {
+        const data = sanitize(req.body);
+        if (data.type === undefined) {
+            const esistente = await Product.findByPk(req.params.id, { attributes: ['type'] });
+            if (esistente) data.type = esistente.type;
+        }
+        if (data.type === 'subscription' && data.listino !== undefined) {
+            const errore = preparaAbbonamento(data);
+            if (errore) return res.status(400).json({ error: errore });
+        }
+        const [updated] = await Product.update(data, {
             where: { id: req.params.id }
         });
         if (updated) {
@@ -85,6 +110,12 @@ exports.deleteProduct = async (req, res) => {
             where: { id: req.params.id }
         });
         if (deleted) {
+            // Abbonamento eliminato: via i collegamenti con i corsi (best effort)
+            fetch(`${activitiesUrl()}/api/corsi/abbonamenti/${req.params.id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', Authorization: req.headers.authorization || '' },
+                body: JSON.stringify({ corsoIds: [] }),
+            }).catch(err => console.error('Pulizia collegamenti corsi fallita:', err.message));
             res.status(204).send();
         } else {
             res.status(404).json({ error: 'Product not found' });
