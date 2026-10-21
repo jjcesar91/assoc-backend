@@ -13,12 +13,30 @@ const DEFAULT_SMTP = {
     fromName: process.env.SMTP_FROM_NAME || 'WebAssociazioni'
 };
 
+// Ambienti di test (dev): con MAIL_SINK_HOST impostato TUTTE le email, anche
+// quelle con l'SMTP personalizzato di una società, vanno a un catcher locale
+// (Mailpit) invece che ai destinatari reali. In produzione la variabile non c'è.
+const MAIL_SINK = process.env.MAIL_SINK_HOST
+    ? { host: process.env.MAIL_SINK_HOST, port: parseInt(process.env.MAIL_SINK_PORT || '1025', 10) }
+    : null;
+if (MAIL_SINK) console.log(`[mail] modalità test: email intercettate da ${MAIL_SINK.host}:${MAIL_SINK.port}, nessun invio reale`);
+
 /**
  * Builds a nodemailer transporter.
  * Uses society SMTP if configured, otherwise falls back to default.
  * @param {Object|null} societa - Sequelize Societa instance or plain object
  */
 function buildTransporter(societa) {
+    if (MAIL_SINK) {
+        return nodemailer.createTransport({
+            host: MAIL_SINK.host,
+            port: MAIL_SINK.port,
+            secure: false,
+            ignoreTLS: true,
+            connectionTimeout: 10000,
+        });
+    }
+
     const hasCustomSmtp = societa && societa.smtp_host && societa.smtp_user && societa.smtp_password;
 
     if (hasCustomSmtp) {
