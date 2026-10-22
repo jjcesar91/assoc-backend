@@ -83,9 +83,9 @@ function etichettaFormula(f) {
 function formulaAbbonamento(prodotto, listinoId) {
     const listino = Array.isArray(prodotto.listino) ? prodotto.listino : [];
     if (listino.length === 0) return { formula: null };
-    if (!listinoId) return listino.length === 1 ? { formula: listino[0] } : { error: `Scegli la formula per "${prodotto.description}"` };
+    if (!listinoId) return listino.length === 1 ? { formula: listino[0] } : { error: `Scegli la tariffa per "${prodotto.description}"` };
     const formula = listino.find(f => f.id === listinoId);
-    return formula ? { formula } : { error: `La formula scelta per "${prodotto.description}" non è più disponibile` };
+    return formula ? { formula } : { error: `La tariffa scelta per "${prodotto.description}" non è più disponibile` };
 }
 
 function nominativoSocio(socio) {

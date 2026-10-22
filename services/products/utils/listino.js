@@ -14,27 +14,27 @@ const toPrezzo = (v) => {
 
 // Valida e normalizza il listino; ritorna { listino } oppure { error }
 function normalizzaListino(raw) {
-    if (!Array.isArray(raw) || raw.length === 0) return { error: 'Il listino deve contenere almeno una formula.' };
-    if (raw.length > MAX_FORMULE) return { error: `Massimo ${MAX_FORMULE} formule nel listino.` };
+    if (!Array.isArray(raw) || raw.length === 0) return { error: 'Il listino deve contenere almeno una tariffa.' };
+    if (raw.length > MAX_FORMULE) return { error: `Massimo ${MAX_FORMULE} tariffe nel listino.` };
     const listino = [];
     const chiavi = new Set();
     for (const [i, f] of raw.entries()) {
         const n = i + 1;
-        if (!DURATE_MESI[f?.durata]) return { error: `Formula ${n}: durata non valida.` };
+        if (!DURATE_MESI[f?.durata]) return { error: `Tariffa ${n}: durata non valida.` };
         const illimitato = f.illimitato === true || f.illimitato === 'true';
         let ingressi = null;
         if (!illimitato) {
             ingressi = parseInt(f.ingressi, 10);
-            if (!Number.isInteger(ingressi) || ingressi <= 0) return { error: `Formula ${n}: indica il numero di ingressi o scegli "illimitati".` };
-            if (ingressi > 1000) return { error: `Formula ${n}: numero di ingressi troppo alto.` };
+            if (!Number.isInteger(ingressi) || ingressi <= 0) return { error: `Tariffa ${n}: indica il numero di ingressi o scegli "illimitati".` };
+            if (ingressi > 1000) return { error: `Tariffa ${n}: numero di ingressi troppo alto.` };
         }
         const prezzo = toPrezzo(f.prezzo);
-        if (!Number.isFinite(prezzo) || prezzo < 0) return { error: `Formula ${n}: prezzo non valido.` };
+        if (!Number.isFinite(prezzo) || prezzo < 0) return { error: `Tariffa ${n}: prezzo non valido.` };
         const descrizione = typeof f.descrizione === 'string' ? f.descrizione.trim().replace(/\s+/g, ' ') : '';
-        if (descrizione.length > MAX_DESCRIZIONE) return { error: `Formula ${n}: descrizione troppo lunga (massimo ${MAX_DESCRIZIONE} caratteri).` };
+        if (descrizione.length > MAX_DESCRIZIONE) return { error: `Tariffa ${n}: descrizione troppo lunga (massimo ${MAX_DESCRIZIONE} caratteri).` };
         // Doppia solo se coincidono durata, ingressi e descrizione (es. "Adulti" e "Under 18" possono convivere)
         const chiave = `${f.durata}|${illimitato ? 'open' : ingressi}|${descrizione.toLowerCase()}`;
-        if (chiavi.has(chiave)) return { error: `Formula ${n}: esiste già una formula con la stessa durata, gli stessi ingressi e la stessa descrizione.` };
+        if (chiavi.has(chiave)) return { error: `Tariffa ${n}: esiste già una tariffa con la stessa durata, gli stessi ingressi e la stessa descrizione.` };
         chiavi.add(chiave);
         listino.push({
             id: typeof f.id === 'string' && /^[a-zA-Z0-9-]{8,40}$/.test(f.id) ? f.id : crypto.randomUUID(),
