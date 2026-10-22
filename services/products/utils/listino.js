@@ -1,10 +1,11 @@
 const crypto = require('crypto');
 
 // Listino di un prodotto di tipo abbonamento: una o più formule, ciascuna con
-// durata, ingressi (numero o illimitati) e prezzo. Le formule hanno un id stabile,
+// descrizione facoltativa, durata, ingressi (numero o illimitati) e prezzo. Le formule hanno un id stabile,
 // registrato sulla voce del pagamento quando vengono vendute.
 const DURATE_MESI = { '1_mese': 1, '2_mesi': 2, '3_mesi': 3, '4_mesi': 4, '6_mesi': 6, '12_mesi': 12 };
 const MAX_FORMULE = 50;
+const MAX_DESCRIZIONE = 120;
 
 const toPrezzo = (v) => {
     const n = typeof v === 'number' ? v : parseFloat(String(v ?? '').replace(',', '.'));
@@ -29,10 +30,12 @@ function normalizzaListino(raw) {
         }
         const prezzo = toPrezzo(f.prezzo);
         if (!Number.isFinite(prezzo) || prezzo < 0) return { error: `Formula ${n}: prezzo non valido.` };
-        const chiave = `${f.durata}|${illimitato ? 'open' : ingressi}`;
-        if (chiavi.has(chiave)) return { error: `Formula ${n}: esiste già una formula con la stessa durata e gli stessi ingressi.` };
+        const descrizione = typeof f.descrizione === 'string' ? f.descrizione.trim().replace(/\s+/g, ' ') : '';
+        if (descrizione.length > MAX_DESCRIZIONE) return { error: `Formula ${n}: descrizione troppo lunga (massimo ${MAX_DESCRIZIONE} caratteri).` };
+        // Doppia solo se coincidono durata, ingressi e descrizione (es. "Adulti" e "Under 18" possono convivere)
+        const chiave = `${f.durata}|${illimitato ? 'open' : ingressi}|${descrizione.toLowerCase()}`;
+        if (chiavi.has(chiave)) return { error: `Formula ${n}: esiste già una formula con la stessa durata, gli stessi ingressi e la stessa descrizione.` };
         chiavi.add(chiave);
-        const descrizione = typeof f.descrizione === 'string' ? f.descrizione.trim().slice(0, 120) : '';
         listino.push({
             id: typeof f.id === 'string' && /^[a-zA-Z0-9-]{8,40}$/.test(f.id) ? f.id : crypto.randomUUID(),
             durata: f.durata,

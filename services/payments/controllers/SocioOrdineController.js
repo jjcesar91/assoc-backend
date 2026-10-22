@@ -74,7 +74,8 @@ async function quotaGiaPagata(ctx, socio, authHeader) {
 const DURATE = { '1_mese': '1 mese', '2_mesi': '2 mesi', '3_mesi': '3 mesi', '4_mesi': '4 mesi', '6_mesi': '6 mesi', '12_mesi': '12 mesi' };
 
 function etichettaFormula(f) {
-    return `${DURATE[f.durata] || f.durata} · ${f.illimitato ? 'ingressi illimitati' : `${f.ingressi} ingressi`}`;
+    const dettagli = `${DURATE[f.durata] || f.durata} · ${f.illimitato ? 'ingressi illimitati' : `${f.ingressi} ingressi`}`;
+    return f.descrizione ? `${f.descrizione} · ${dettagli}` : dettagli;
 }
 
 // Formula del listino scelta per un abbonamento: obbligatoria se il listino ne ha più
