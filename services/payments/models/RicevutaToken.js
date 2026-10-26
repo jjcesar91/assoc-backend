@@ -15,7 +15,8 @@ module.exports = (sequelize, DataTypes) => {
     token: {
       type: DataTypes.STRING(64),
       allowNull: false,
-      unique: true,
+      // unicità nell'indice nominato sotto: `unique: true` qui fa creare a sync({alter})
+      // un vincolo duplicato a ogni avvio
     },
     payment_id: {
       type: DataTypes.INTEGER,
@@ -41,6 +42,7 @@ module.exports = (sequelize, DataTypes) => {
     modelName: 'RicevutaToken',
     tableName: 'ricevuta_tokens',
     timestamps: true,
+    indexes: [{ unique: true, fields: ['token'], name: 'ricevuta_tokens_token_key' }],
   });
   return RicevutaToken;
 };

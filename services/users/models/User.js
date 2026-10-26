@@ -22,7 +22,8 @@ module.exports = (sequelize, DataTypes) => {
     email: {
       type: DataTypes.STRING,
       allowNull: false,
-      unique: true,
+      // unicità nell'indice nominato sotto: `unique: true` qui fa creare a sync({alter})
+      // un vincolo duplicato a ogni avvio
       validate: {
         isEmail: true
       }
@@ -48,7 +49,8 @@ module.exports = (sequelize, DataTypes) => {
   }, {
     sequelize,
     modelName: 'User',
-    tableName: 'users'
+    tableName: 'users',
+    indexes: [{ unique: true, fields: ['email'], name: 'users_email_key' }]
   });
   
   return User;
