@@ -24,6 +24,10 @@ services:
   template_ms:
     build: ../services/template
     container_name: template_ms${CONTAINER_SUFFIX-_prod}
+    # Sui server: node e non nodemon. Se il processo esce (es. database non ancora pronto
+    # dopo un riavvio dell'host) il container si ferma e la restart policy lo rilancia;
+    # nodemon invece restava acceso "in attesa di modifiche" con il servizio giù.
+    command: ["node", "index.js"]
     restart: unless-stopped
     environment:
       - PORT=3000
@@ -64,6 +68,7 @@ services:
   auth_ms:
     build: ../services/auth
     container_name: auth_ms${CONTAINER_SUFFIX-_prod}
+    command: ["node", "index.js"]
     restart: unless-stopped
     environment:
       - PORT=3000
@@ -107,6 +112,7 @@ services:
   users_ms:
     build: ../services/users
     container_name: users_ms${CONTAINER_SUFFIX-_prod}
+    command: ["node", "index.js"]
     restart: unless-stopped
     environment:
       - PORT=3000
@@ -155,6 +161,7 @@ services:
   documents_ms:
     build: ../services/documents
     container_name: documents_ms${CONTAINER_SUFFIX-_prod}
+    command: ["node", "index.js"]
     restart: unless-stopped
     environment:
       - PORT=3000
@@ -194,6 +201,7 @@ services:
   products_ms:
     build: ../services/products
     container_name: products_ms${CONTAINER_SUFFIX-_prod}
+    command: ["sh", "-c", "npx sequelize-cli db:migrate && exec node index.js"]
     restart: unless-stopped
     environment:
       - PORT=3000
@@ -233,6 +241,7 @@ services:
   payments_ms:
     build: ../services/payments
     container_name: payments_ms${CONTAINER_SUFFIX-_prod}
+    command: ["node", "index.js"]
     restart: unless-stopped
     environment:
       - PORT=3000
@@ -276,6 +285,7 @@ services:
   activities_ms:
     build: ../services/activities
     container_name: activities_ms${CONTAINER_SUFFIX-_prod}
+    command: ["node", "index.js"]
     restart: unless-stopped
     environment:
       - PORT=3000
