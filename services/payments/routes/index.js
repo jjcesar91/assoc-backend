@@ -98,6 +98,7 @@ router.delete('/conti/:id', ContoController.delete);
 
 router.get('/gruppi', GruppoController.getBySocieta);
 router.get('/gruppi/totali', GruppoController.getTotali);
+router.get('/gruppi/assegnazioni', GruppoController.getAssegnazioni);
 router.post('/gruppi/init-aps', GruppoController.initAps);
 router.post('/gruppi/init-asd', GruppoController.initAsd);
 router.post('/gruppi', GruppoController.create);

@@ -182,6 +182,63 @@ exports.getBySocieta = async (req, res) => {
     }
 };
 
+// Risolutore del sottogruppo di ogni voce di un pagamento (stesse regole del Bilancio):
+// 1) gruppo_id esplicito sul pagamento → tutto l'importo; 2) per ogni voce di
+// payment_items (o il pagamento se non ha voci): a) sottogruppo del prodotto,
+// b) default per tipo prodotto (Configurazione → Contabilità). Ritorna
+// vociGruppo(p) → [{ gruppoId | null, importo }], oppure null se i prodotti non sono disponibili.
+async function creaRisolutoreGruppi(societa_id, authHeader) {
+    const headers = authHeader ? { Authorization: authHeader } : {};
+    const productsRes = await fetch(`${productsUrl()}/api?societaId=${encodeURIComponent(societa_id)}`, { headers });
+    if (!productsRes.ok) {
+        console.error(`gruppi: products-service ha risposto ${productsRes.status}`);
+        return null;
+    }
+    const productsData = await productsRes.json();
+
+    const [gruppi, vociConfig] = await Promise.all([
+        Gruppo.findAll({ where: { societa_id }, attributes: ['id', 'codice'] }),
+        PaymentVoceConfig.findAll({ where: { societa_id } }),
+    ]);
+
+    const validIds = new Set(gruppi.map(g => g.id));
+    const codiceToId = {};
+    gruppi.forEach(g => { if (g.codice) codiceToId[g.codice] = g.id; });
+
+    const quoteTypeToGruppoId = {};
+    Object.entries(QUOTE_TYPE_TO_CODICE).forEach(([t, codice]) => {
+        if (codiceToId[codice]) quoteTypeToGruppoId[t] = codiceToId[codice];
+    });
+    vociConfig.forEach(c => {
+        if (c.gruppo_id && validIds.has(c.gruppo_id)) quoteTypeToGruppoId[c.quote_type] = c.gruppo_id;
+    });
+    if (!quoteTypeToGruppoId.inscription && quoteTypeToGruppoId.quota_associativa) {
+        quoteTypeToGruppoId.inscription = quoteTypeToGruppoId.quota_associativa;
+    }
+
+    const productIdToGruppoId = {};
+    (Array.isArray(productsData) ? productsData : []).forEach(p => {
+        if (p.gruppoId && validIds.has(p.gruppoId)) productIdToGruppoId[p.id] = p.gruppoId;
+    });
+
+    const resolveVoce = (productId, quoteTypes) => {
+        if (productId && productIdToGruppoId[productId]) return productIdToGruppoId[productId];
+        if (quoteTypes) {
+            for (const t of String(quoteTypes).split(',').map(s => s.trim())) {
+                if (quoteTypeToGruppoId[t]) return quoteTypeToGruppoId[t];
+            }
+        }
+        return null;
+    };
+
+    return (p) => {
+        if (p.gruppo_id) return [{ gruppoId: p.gruppo_id, importo: p.importo }];
+        const items = Array.isArray(p.payment_items) ? p.payment_items : [];
+        if (items.length > 0) return items.map(i => ({ gruppoId: resolveVoce(i.product_id, i.quote_types), importo: i.importo }));
+        return [{ gruppoId: resolveVoce(p.product_id, p.quote_types), importo: p.importo }];
+    };
+}
+
 // GET /gruppi/totali?societa_id=...&data_da=YYYY-MM-DD&data_a=YYYY-MM-DD
 // Totali per sottogruppo (Bilancio / Rendiconto per Cassa), sempre positivi —
 // il segno è dato dal tipo del gruppo. Esclusi annullati e giroconti.
@@ -202,48 +259,8 @@ exports.getTotali = async (req, res) => {
             }
         }
 
-        const headers = req.headers['authorization'] ? { Authorization: req.headers['authorization'] } : {};
-        const productsRes = await fetch(`${productsUrl()}/api?societaId=${encodeURIComponent(societa_id)}`, { headers });
-        if (!productsRes.ok) {
-            console.error(`getTotali: products-service ha risposto ${productsRes.status}`);
-            return res.status(502).json({ error: 'Impossibile recuperare i prodotti per il calcolo dei totali' });
-        }
-        const productsData = await productsRes.json();
-
-        const [gruppi, vociConfig] = await Promise.all([
-            Gruppo.findAll({ where: { societa_id }, attributes: ['id', 'codice'] }),
-            PaymentVoceConfig.findAll({ where: { societa_id } }),
-        ]);
-
-        const validIds = new Set(gruppi.map(g => g.id));
-        const codiceToId = {};
-        gruppi.forEach(g => { if (g.codice) codiceToId[g.codice] = g.id; });
-
-        const quoteTypeToGruppoId = {};
-        Object.entries(QUOTE_TYPE_TO_CODICE).forEach(([t, codice]) => {
-            if (codiceToId[codice]) quoteTypeToGruppoId[t] = codiceToId[codice];
-        });
-        vociConfig.forEach(c => {
-            if (c.gruppo_id && validIds.has(c.gruppo_id)) quoteTypeToGruppoId[c.quote_type] = c.gruppo_id;
-        });
-        if (!quoteTypeToGruppoId.inscription && quoteTypeToGruppoId.quota_associativa) {
-            quoteTypeToGruppoId.inscription = quoteTypeToGruppoId.quota_associativa;
-        }
-
-        const productIdToGruppoId = {};
-        (Array.isArray(productsData) ? productsData : []).forEach(p => {
-            if (p.gruppoId && validIds.has(p.gruppoId)) productIdToGruppoId[p.id] = p.gruppoId;
-        });
-
-        const resolveVoce = (productId, quoteTypes) => {
-            if (productId && productIdToGruppoId[productId]) return productIdToGruppoId[productId];
-            if (quoteTypes) {
-                for (const t of String(quoteTypes).split(',').map(s => s.trim())) {
-                    if (quoteTypeToGruppoId[t]) return quoteTypeToGruppoId[t];
-                }
-            }
-            return null;
-        };
+        const vociGruppo = await creaRisolutoreGruppi(societa_id, req.headers['authorization']);
+        if (!vociGruppo) return res.status(502).json({ error: 'Impossibile recuperare i prodotti per il calcolo dei totali' });
 
         const where = {
             societa_id,
@@ -271,19 +288,36 @@ exports.getTotali = async (req, res) => {
             else nonAssegnatoCents += c;
         };
 
-        payments.forEach(p => {
-            if (p.gruppo_id) return add(p.gruppo_id, p.importo);
-            const items = Array.isArray(p.payment_items) ? p.payment_items : [];
-            if (items.length > 0) {
-                items.forEach(i => add(resolveVoce(i.product_id, i.quote_types), i.importo));
-            } else {
-                add(resolveVoce(p.product_id, p.quote_types), p.importo);
-            }
-        });
+        payments.forEach(p => vociGruppo(p).forEach(v => add(v.gruppoId, v.importo)));
 
         const totali = {};
         Object.entries(cents).forEach(([id, c]) => { totali[id] = c / 100; });
         res.json({ totali, non_assegnato: nonAssegnatoCents / 100 });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// GET /gruppi/assegnazioni?societa_id=...&data_da=...&data_a=...
+// Sottogruppi a cui è imputato ogni pagamento (stesse regole del Bilancio), per il
+// filtro per gruppo della Prima Nota → { assegnazioni: { [paymentId]: [gruppoId | null, ...] } }
+exports.getAssegnazioni = async (req, res) => {
+    try {
+        const { societa_id, data_da, data_a } = req.query;
+        if (!societa_id) return res.status(400).json({ error: 'societa_id obbligatorio' });
+        const vociGruppo = await creaRisolutoreGruppi(societa_id, req.headers['authorization']);
+        if (!vociGruppo) return res.status(502).json({ error: 'Impossibile recuperare i prodotti' });
+        const where = { societa_id };
+        if (data_da || data_a) {
+            where.data_pagamento = {};
+            if (data_da) where.data_pagamento[Op.gte] = data_da;
+            if (data_a) where.data_pagamento[Op.lte] = data_a;
+        }
+        const payments = await Payment.findAll({ where, attributes: ['id', 'importo', 'gruppo_id', 'product_id', 'quote_types', 'payment_items'] });
+        const assegnazioni = {};
+        payments.forEach(p => { assegnazioni[p.id] = [...new Set(vociGruppo(p).map(v => v.gruppoId ?? null))]; });
+        res.json({ assegnazioni });
     } catch (error) {
         console.error(error);
         res.status(500).json({ error: error.message });
