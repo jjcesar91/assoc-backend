@@ -70,6 +70,9 @@ class AutomazioneController {
           extra_config: config.extra_config,
           oggetto_email: config.oggetto_email,
           testo_email: config.testo_email,
+          // Testi predefiniti (usati quando oggetto/testo sono vuoti): per Scadenziario → Comunicazioni
+          oggetto_default: def.oggettoDefault(societa),
+          testo_default: def.testoDefault(societa),
           prossimo_invio: prossimoInvio,
           ultimo_invio: ultimoInvioRow?.data_invio ?? null,
           richiedeExtraBiennale: def.deadlineStrategy === 'biannual_calendar',

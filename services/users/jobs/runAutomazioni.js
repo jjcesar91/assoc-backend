@@ -31,13 +31,31 @@ async function giaInviata({ societaId, tipo, socioId, riferimentoExtra, scadenza
   return !!row;
 }
 
-async function inviaEmailAutomazione({ def, config, societa, to, scadenza, contatore }) {
+// Campi dinamici dei testi personalizzabili (Scadenziario → Comunicazioni):
+// {{NOME}}, {{COGNOME}}, {{SOCIETA}}, {{DATA_SCADENZA}}. Valori escapati nel corpo HTML.
+const escapeHtml = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+function sostituisciCampi(testo, valori, { html }) {
+  return String(testo || '').replace(/\{\{([A-Z_]+)\}\}/g, (m, k) => (k in valori ? (html ? escapeHtml(valori[k]) : String(valori[k] ?? '')) : m));
+}
+
+async function inviaEmailAutomazione({ def, config, societa, socio, to, scadenza, contatore }) {
   try {
     if (!to) throw new Error('Destinatario mancante');
-    const subject = config.oggetto_email || def.oggettoDefault(societa);
+    const valori = {
+      NOME: socio?.nome || '',
+      COGNOME: socio?.cognome || '',
+      SOCIETA: societa.denominazione || '',
+      DATA_SCADENZA: formatDataIt(scadenza),
+    };
+    const oggetto = config.oggetto_email || def.oggettoDefault(societa);
     const corpo = config.testo_email || def.testoDefault(societa);
-    const html = `${corpo}<br/><br/><strong>Data scadenza: ${formatDataIt(scadenza)}</strong>`;
-    await sendEmail({ to, subject, html, societa });
+    const subject = sostituisciCampi(oggetto, valori, { html: false });
+    const html = sostituisciCampi(corpo, valori, { html: true });
+    // La data di scadenza in fondo solo se il testo non la riporta già con {{DATA_SCADENZA}}
+    const finale = corpo.includes('{{DATA_SCADENZA}}')
+      ? html
+      : `${html}<br/><br/><strong>Data scadenza: ${formatDataIt(scadenza)}</strong>`;
+    await sendEmail({ to, subject, html: finale, societa });
     contatore.inviati += 1;
     return { esito: 'INVIATO', errore: null };
   } catch (err) {
@@ -61,7 +79,7 @@ async function processSocioField(tipo, def, config, societa, today, contatore) {
       contatore.saltati += 1;
       continue;
     }
-    const { esito, errore } = await inviaEmailAutomazione({ def, config, societa, to: socio.email, scadenza, contatore });
+    const { esito, errore } = await inviaEmailAutomazione({ def, config, societa, socio, to: socio.email, scadenza, contatore });
     await registraInvio({ societaId: societa.id, tipo, socioId: socio.id, scadenzaRiferimento: scadenza, destinatario: socio.email, esito, dettaglioErrore: errore });
   }
 }
@@ -81,7 +99,7 @@ async function processTuttiSoci(tipo, def, config, societa, today, contatore) {
       contatore.saltati += 1;
       continue;
     }
-    const { esito, errore } = await inviaEmailAutomazione({ def, config, societa, to: socio.email, scadenza, contatore });
+    const { esito, errore } = await inviaEmailAutomazione({ def, config, societa, socio, to: socio.email, scadenza, contatore });
     await registraInvio({ societaId: societa.id, tipo, socioId: socio.id, scadenzaRiferimento: scadenza, destinatario: socio.email, esito, dettaglioErrore: errore });
   }
 }
@@ -113,7 +131,7 @@ async function processAbbonamento(tipo, def, config, societa, today, contatore) 
     }
     const socio = await Socio.findByPk(item.socio_id);
     const to = socio?.email;
-    const { esito, errore } = await inviaEmailAutomazione({ def, config, societa, to, scadenza, contatore });
+    const { esito, errore } = await inviaEmailAutomazione({ def, config, societa, socio, to, scadenza, contatore });
     await registraInvio({ societaId: societa.id, tipo, socioId: item.socio_id, riferimentoExtra, scadenzaRiferimento: scadenza, destinatario: to, esito, dettaglioErrore: errore });
   }
 }
