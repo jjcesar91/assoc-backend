@@ -816,36 +816,50 @@ exports.abbonamentiScadenza = async (req, res) => {
         if (!societaId) {
             return res.status(400).json({ error: 'societaId is required' });
         }
+        // Solo pagamenti effettivi: niente annullati né proforma (ricevute provvisorie non pagate)
         const payments = await Payment.findAll({
             where: {
                 societa_id: societaId,
                 quote_types: { [Op.iLike]: '%subscription%' },
-                data_scadenza_abbonamento: { [Op.not]: null },
                 stato_pagamento: { [Op.notLike]: '3.%' },
+                [Op.or]: [{ tipo_documento: null }, { tipo_documento: { [Op.ne]: 'proforma' } }],
             },
-            attributes: ['id', 'socio_id', 'intestatario', 'product_id', 'data_scadenza_abbonamento'],
+            attributes: ['id', 'socio_id', 'intestatario', 'product_id', 'data_scadenza_abbonamento', 'payment_items'],
         });
-        // Un abbonamento pagato a rate genera più righe Payment con lo stesso
-        // product_id e la stessa scadenza: le raggruppiamo per non generare più
-        // promemoria per lo stesso abbonamento. abbonamento_id identifica
-        // l'abbonamento (product_id, con fallback sul singolo payment id se il
-        // prodotto non è tracciato) ed è usato dal chiamante come chiave di
-        // idempotenza per distinguere abbonamenti diversi con la stessa scadenza.
-        const byAbbonamento = new Map();
+        // Un pagamento con più prodotti è un solo record: le scadenze sono nelle singole
+        // voci (payment_items). Per ogni socio e abbonamento (product_id, con fallback sul
+        // singolo pagamento se il prodotto non è tracciato) vale solo la scadenza più
+        // recente: un rinnovo sostituisce la precedente, che altrimenti farebbe partire un
+        // promemoria per un abbonamento già rinnovato. Le rate dello stesso abbonamento
+        // hanno la stessa scadenza e confluiscono nella stessa voce. abbonamento_id è usato
+        // dal chiamante come chiave di idempotenza.
+        const ultime = new Map();
         for (const p of payments) {
             if (p.socio_id == null) continue;
-            const abbonamentoId = p.product_id ?? p.id;
-            const key = `${p.socio_id}:${abbonamentoId}:${p.data_scadenza_abbonamento}`;
-            if (!byAbbonamento.has(key)) {
-                byAbbonamento.set(key, {
-                    socio_id: p.socio_id,
-                    intestatario: p.intestatario,
-                    abbonamento_id: abbonamentoId,
-                    data_scadenza_abbonamento: p.data_scadenza_abbonamento,
-                });
+            const voci = Array.isArray(p.payment_items) ? p.payment_items : [];
+            const vociAbb = voci.filter(v => String(v.quote_types || '').trim().toLowerCase() === 'subscription');
+            const scadenze = vociAbb.length > 0
+                ? vociAbb.map((v) => ({
+                    abbonamentoId: v.product_id ?? p.id,
+                    scadenza: v.data_scadenza_abbonamento || (vociAbb.length === 1 ? p.data_scadenza_abbonamento : null),
+                }))
+                : [{ abbonamentoId: p.product_id ?? p.id, scadenza: p.data_scadenza_abbonamento }];
+            for (const { abbonamentoId, scadenza } of scadenze) {
+                if (!scadenza) continue;
+                const data = String(scadenza).slice(0, 10);
+                const key = `${p.socio_id}:${abbonamentoId}`;
+                const esistente = ultime.get(key);
+                if (!esistente || data > esistente.data_scadenza_abbonamento) {
+                    ultime.set(key, {
+                        socio_id: p.socio_id,
+                        intestatario: p.intestatario,
+                        abbonamento_id: abbonamentoId,
+                        data_scadenza_abbonamento: data,
+                    });
+                }
             }
         }
-        res.status(200).json(Array.from(byAbbonamento.values()));
+        res.status(200).json(Array.from(ultime.values()));
     } catch (err) {
         console.error('abbonamentiScadenza error:', err);
         res.status(500).json({ error: err.message });
