@@ -414,6 +414,82 @@ exports.giroconto = async (req, res) => {
     }
 };
 
+// Coppia di righe di un giroconto (uscita sul conto di origine + entrata sul conto di
+// destinazione, create insieme da POST /giroconto). Non c'è un collegamento salvato: la
+// gemella ha stessa società e data, modalità 'Giroconto', importo opposto e conti incrociati
+// ("Giroconto verso X" sull'uscita dal conto Y ↔ "Giroconto da Y" sull'entrata nel conto X).
+// Tra più candidate vale la più vicina per data di creazione. → { uscita, entrata } o null
+async function coppiaGiroconto(id) {
+    const riga = await Payment.findByPk(id);
+    if (!riga || riga.modalita_pagamento !== 'Giroconto') return null;
+    const importo = parseFloat(riga.importo);
+    const candidate = await Payment.findAll({
+        where: {
+            societa_id: riga.societa_id,
+            modalita_pagamento: 'Giroconto',
+            data_pagamento: riga.data_pagamento,
+            id: { [Op.ne]: riga.id },
+        },
+    });
+    const incrociata = (a, b) => {
+        // a = uscita (importo < 0), b = entrata
+        return a.quote === `Giroconto verso ${b.conto_destinazione}` && b.quote === `Giroconto da ${a.conto_destinazione}`;
+    };
+    const gemelle = candidate
+        .filter(c => Math.abs(parseFloat(c.importo) + importo) < 0.005)
+        .filter(c => (importo < 0 ? incrociata(riga, c) : incrociata(c, riga)))
+        .sort((a, b) => Math.abs(new Date(a.createdAt) - new Date(riga.createdAt)) - Math.abs(new Date(b.createdAt) - new Date(riga.createdAt)));
+    const gemella = gemelle[0];
+    if (!gemella) return { uscita: importo < 0 ? riga : null, entrata: importo >= 0 ? riga : null, riga };
+    return importo < 0 ? { uscita: riga, entrata: gemella, riga } : { uscita: gemella, entrata: riga, riga };
+}
+
+// PUT /giroconto/:id  { data_pagamento, importo, conto_uscita, conto_entrata, note }
+// Modifica entrambe le righe del giroconto (id = una qualsiasi delle due).
+exports.aggiornaGiroconto = async (req, res) => {
+    try {
+        const coppia = await coppiaGiroconto(req.params.id);
+        if (!coppia) return res.status(404).json({ error: 'Giroconto non trovato' });
+        const { data_pagamento, importo, conto_uscita, conto_entrata, note } = req.body || {};
+        if (!conto_uscita || !conto_entrata) return res.status(400).json({ error: 'Seleziona conto di uscita e conto di entrata.' });
+        if (conto_uscita === conto_entrata) return res.status(400).json({ error: 'Il conto di uscita e il conto di entrata devono essere diversi.' });
+        const importoAbs = Math.abs(parseFloat(importo));
+        if (!importoAbs || isNaN(importoAbs)) return res.status(400).json({ error: 'Inserisci un importo valido.' });
+        if (!data_pagamento) return res.status(400).json({ error: 'data_pagamento obbligatoria' });
+
+        const modificato_da = req.user?.username || null;
+        const comune = { data_pagamento, note: note || null, modificato_da };
+        await sequelize.transaction(async (t) => {
+            const uscita = { ...comune, importo: -importoAbs, quote: `Giroconto verso ${conto_entrata}`, conto_destinazione: conto_uscita };
+            const entrata = { ...comune, importo: importoAbs, quote: `Giroconto da ${conto_uscita}`, conto_destinazione: conto_entrata };
+            if (coppia.uscita) await coppia.uscita.update(uscita, { transaction: t });
+            if (coppia.entrata) await coppia.entrata.update(entrata, { transaction: t });
+            // Riga orfana (gemella cancellata in passato): si ricrea la metà mancante
+            const base = { societa_id: coppia.riga.societa_id, modalita_pagamento: 'Giroconto', quote_types: 'giroconto', stato_pagamento: '1. VALIDO CON RICEVUTA', gruppo_id: null };
+            if (!coppia.uscita) await Payment.create({ ...base, ...uscita }, { transaction: t });
+            if (!coppia.entrata) await Payment.create({ ...base, ...entrata }, { transaction: t });
+        });
+        return res.json({ ok: true });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Modifica del giroconto non riuscita' });
+    }
+};
+
+// DELETE /giroconto/:id → elimina entrambe le righe del giroconto
+exports.eliminaGiroconto = async (req, res) => {
+    try {
+        const coppia = await coppiaGiroconto(req.params.id);
+        if (!coppia) return res.status(404).json({ error: 'Giroconto non trovato' });
+        const ids = [coppia.uscita?.id, coppia.entrata?.id].filter(Boolean);
+        await Payment.destroy({ where: { id: ids } });
+        return res.json({ eliminate: ids.length });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Eliminazione del giroconto non riuscita' });
+    }
+};
+
 exports.update = async (req, res) => {
     try {
         const { id } = req.params;
