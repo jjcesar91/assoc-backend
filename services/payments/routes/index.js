@@ -94,6 +94,8 @@ router.get('/conti', ContoController.getBySocieta);
 router.post('/conti', ContoController.create);
 router.put('/conti/:id', ContoController.update);
 router.put('/conti/:id/predefinito', ContoController.setPredefinito);
+router.put('/conti/:id/saldo', ContoController.updateSaldo);
+router.get('/conti/:id/saldo/storico', ContoController.storicoSaldo);
 router.delete('/conti/:id', ContoController.delete);
 
 router.get('/gruppi', GruppoController.getBySocieta);

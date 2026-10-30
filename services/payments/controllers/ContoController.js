@@ -1,5 +1,5 @@
 const { Op } = require('sequelize');
-const { Conto, sequelize } = require('../models');
+const { Conto, ContoSaldoStorico, sequelize } = require('../models');
 const { getLicenzaLimiti, esente, limiteError } = require('../utils/licenzaLimiti');
 
 // Normalizza il payload in arrivo dal client: l'API pubblica usa il nome
@@ -82,6 +82,79 @@ exports.create = async (req, res) => {
     }
 };
 
+// ─── Saldo iniziale ──────────────────────────────────────────────────────────
+// Lo modificano gli amministratori della società (admin) e il superuser; ogni modifica
+// effettiva finisce in conto_saldo_storico con valori prima/dopo e autore. Se il saldo
+// non è mai stato impostato (importo 0 e nessuna data) può inserirlo chiunque.
+const AMMINISTRATORI = ['admin', 'superuser'];
+
+const saldoImpostato = (c) => c.saldo_iniziale_data != null || (c.saldo_iniziale != null && Number(c.saldo_iniziale) !== 0);
+
+// L'utente può operare sui conti di questa società? (superuser ovunque, gli altri sulle proprie)
+function societaConsentita(user, societaId) {
+    if (user?.role === 'superuser') return true;
+    const ids = [...(Array.isArray(user?.societaIds) ? user.societaIds : []), user?.societaId].filter(v => v != null).map(String);
+    return ids.includes(String(societaId));
+}
+
+function puoModificareSaldo(user, conto) {
+    return !saldoImpostato(conto) || AMMINISTRATORI.includes(user?.role);
+}
+
+// Applica saldo e data al conto e registra la modifica (se i valori cambiano davvero)
+async function applicaSaldo(conto, { saldo_iniziale, saldo_iniziale_data }, user, origine, transaction) {
+    const nuovoSaldo = saldo_iniziale === '' || saldo_iniziale == null ? 0 : Number(saldo_iniziale);
+    const nuovaData = saldo_iniziale_data || null;
+    const vecchioSaldo = conto.saldo_iniziale == null ? 0 : Number(conto.saldo_iniziale);
+    const vecchiaData = conto.saldo_iniziale_data || null;
+    if (Math.abs(nuovoSaldo - vecchioSaldo) < 0.005 && nuovaData === vecchiaData) return false;
+    await conto.update({ saldo_iniziale: nuovoSaldo, saldo_iniziale_data: nuovaData }, { transaction });
+    await ContoSaldoStorico.create({
+        conto_id: conto.id, societa_id: conto.societa_id,
+        saldo_precedente: vecchioSaldo, data_precedente: vecchiaData,
+        saldo_nuovo: nuovoSaldo, data_nuova: nuovaData,
+        utente_id: user?.id ?? null, utente_email: user?.email ?? null, utente_ruolo: user?.role ?? null,
+        origine,
+    }, { transaction });
+    return true;
+}
+
+// PUT /conti/:id/saldo  { saldo_iniziale, saldo_iniziale_data }  (Prima Nota)
+exports.updateSaldo = async (req, res) => {
+    try {
+        const conto = await Conto.findByPk(req.params.id);
+        if (!conto) return res.status(404).json({ error: 'Conto non trovato' });
+        if (!societaConsentita(req.user, conto.societa_id)) return res.sendStatus(403);
+        if (!puoModificareSaldo(req.user, conto)) {
+            return res.status(403).json({ error: 'Il saldo iniziale di un conto già impostato può essere modificato solo da un amministratore.' });
+        }
+        const saldo = req.body?.saldo_iniziale;
+        if (saldo !== '' && saldo != null && isNaN(Number(String(saldo).replace(',', '.')))) {
+            return res.status(400).json({ error: 'Saldo non valido' });
+        }
+        const dati = { saldo_iniziale: saldo == null || saldo === '' ? 0 : Number(String(saldo).replace(',', '.')), saldo_iniziale_data: req.body?.saldo_iniziale_data || null };
+        await sequelize.transaction(t => applicaSaldo(conto, dati, req.user, req.body?.origine === 'conti' ? 'conti' : 'prima_nota', t));
+        res.json(toPublicJson(conto));
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// GET /conti/:id/saldo/storico → modifiche al saldo iniziale, dalla più recente
+exports.storicoSaldo = async (req, res) => {
+    try {
+        const conto = await Conto.findByPk(req.params.id);
+        if (!conto) return res.status(404).json({ error: 'Conto non trovato' });
+        if (!societaConsentita(req.user, conto.societa_id)) return res.sendStatus(403);
+        const righe = await ContoSaldoStorico.findAll({ where: { conto_id: conto.id }, order: [['createdAt', 'DESC']], limit: 100 });
+        res.json(righe);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: error.message });
+    }
+};
+
 exports.update = async (req, res) => {
     try {
         const id = req.params.id;
@@ -91,18 +164,18 @@ exports.update = async (req, res) => {
         // che garantisce l'unicità del conto predefinito per società.
         const { predefinito, ...payload } = req.body;
         const cleaned = sanitize(payload);
-        // Saldo iniziale e relativa data: se non sono mai stati impostati chiunque
-        // può valorizzarli; una volta impostati (data presente oppure importo
-        // diverso da zero) solo il superuser può modificarli. Per gli altri
-        // utenti si scartano le modifiche a questi campi, lasciando invariato il
-        // resto del payload.
-        const saldoGiaImpostato = record.saldo_iniziale_data != null
-            || (record.saldo_iniziale != null && Number(record.saldo_iniziale) !== 0);
-        if (saldoGiaImpostato && req.user?.role !== 'superuser') {
-            delete cleaned.saldo_iniziale;
-            delete cleaned.saldo_iniziale_data;
-        }
-        await record.update(cleaned);
+        // Saldo iniziale: stesse regole e stesso storico di PUT /conti/:id/saldo. Chi non può
+        // modificarlo (saldo già impostato e utente non amministratore) se lo vede ignorato.
+        const toccaSaldo = 'saldo_iniziale' in cleaned || 'saldo_iniziale_data' in cleaned;
+        const saldo = toccaSaldo && puoModificareSaldo(req.user, record)
+            ? { saldo_iniziale: 'saldo_iniziale' in cleaned ? cleaned.saldo_iniziale : record.saldo_iniziale, saldo_iniziale_data: 'saldo_iniziale_data' in cleaned ? cleaned.saldo_iniziale_data : record.saldo_iniziale_data }
+            : null;
+        delete cleaned.saldo_iniziale;
+        delete cleaned.saldo_iniziale_data;
+        await sequelize.transaction(async (t) => {
+            await record.update(cleaned, { transaction: t });
+            if (saldo) await applicaSaldo(record, saldo, req.user, 'conti', t);
+        });
         res.json(toPublicJson(record));
     } catch (error) {
         res.status(500).json({ error: error.message });
