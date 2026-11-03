@@ -110,6 +110,9 @@ const REGISTRY = {
     deadlineStrategy: 'socio_field',
     destinatario: 'socio_field',
     socioField: 'scadenza_certificato',
+    // Il promemoria parte solo se il socio ha almeno un abbonamento attivo (scadenza
+    // dell'ultimo pagamento non ancora passata): chi non è più iscritto non va sollecitato.
+    richiedeAbbonamentoAttivo: true,
     giorniAnticipoDefault: 15,
     applicabile: () => true,
     oggettoDefault: () => `Scadenza certificato medico`,

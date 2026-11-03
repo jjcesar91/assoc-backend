@@ -136,6 +136,17 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: false,
       defaultValue: false
     },
+    // Cadenza del controllo scadenze delle automazioni (vedi utils/automazioniPianificazione.js):
+    // null = default, ogni giorno alle 6:00 (Europe/Rome).
+    automazioni_pianificazione: {
+      type: DataTypes.JSON,
+      allowNull: true
+    },
+    // Ultimo controllo pianificato eseguito dal job (non aggiornato da "Esegui controllo ora").
+    automazioni_ultimo_controllo: {
+      type: DataTypes.DATE,
+      allowNull: true
+    },
     tipo_associazione: {
       type: DataTypes.STRING,
       allowNull: false,

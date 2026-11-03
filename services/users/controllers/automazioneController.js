@@ -5,6 +5,7 @@ const { Societa, Socio, AutomazioneConfig, AutomazioneInvio } = require('../mode
 const { TIPI, getDefinizione, getAmbito, resolveConfig } = require('../utils/automazioniRegistry');
 const { computeOccorrenzaSocieta } = require('../utils/deadlineCalculator');
 const { runAutomazioniCheck } = require('../jobs/runAutomazioni');
+const pian = require('../utils/automazioniPianificazione');
 
 const getUserScope = (req) => {
   const role = req.user?.role || 'user';
@@ -79,7 +80,16 @@ class AutomazioneController {
         };
       }));
 
-      return res.status(200).json({ societaId, rules });
+      const p = pian.normalizza(societa.automazioni_pianificazione);
+      const pianificazione = {
+        ...p,
+        intervallo_giorni: pian.INTERVALLO_GIORNI[p.frequenza],
+        ultimo_controllo: societa.automazioni_ultimo_controllo,
+        // Ora locale di Roma, 'YYYY-MM-DDTHH:mm'
+        prossimo_controllo: pian.formatLocale(pian.prossimoControllo(societa)),
+      };
+
+      return res.status(200).json({ societaId, rules, pianificazione });
     } catch (error) {
       console.error('Error fetching automazioni config:', error);
       return res.status(500).json({ error: error.message });
@@ -97,6 +107,22 @@ class AutomazioneController {
         return res.status(403).json({ error: 'Forbidden' });
       }
       const rules = Array.isArray(req.body.rules) ? req.body.rules : [];
+
+      if (req.body.pianificazione !== undefined) {
+        const errore = pian.valida(req.body.pianificazione);
+        if (errore) return res.status(400).json({ error: errore });
+        const societa = await Societa.findByPk(societaId);
+        if (!societa) return res.status(404).json({ error: 'Società non trovata' });
+        const nuova = pian.normalizza(req.body.pianificazione);
+        const prima = pian.normalizza(societa.automazioni_pianificazione);
+        // Cadenza cambiata: il prossimo controllo parte dal prossimo slot della nuova
+        // cadenza (non subito, anche se lo slot più recente non è mai stato eseguito).
+        const cambiata = JSON.stringify(nuova) !== JSON.stringify(prima);
+        await societa.update({
+          automazioni_pianificazione: nuova,
+          ...(cambiata ? { automazioni_ultimo_controllo: new Date() } : {}),
+        });
+      }
 
       for (const rule of rules) {
         if (!TIPI.includes(rule.tipo)) continue;

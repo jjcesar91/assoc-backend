@@ -5,7 +5,7 @@ const cron = require('node-cron');
 const db = require('./models');
 const { backfillLicenze } = require('./utils/licenze');
 const routes = require('./routes');
-const { runAutomazioniCheck } = require('./jobs/runAutomazioni');
+const { runAutomazioniPianificate } = require('./jobs/runAutomazioni');
 const { chiudiTicketRisolti } = require('./jobs/chiudiTicketRisolti');
 require('dotenv').config();
 
@@ -68,11 +68,10 @@ db.sequelize.authenticate()
       console.log(`Server is running on port ${PORT}`);
     });
 
-    // Controllo automazioni email: un solo run giornaliero (non polling
-    // continuo) per non sovraccaricare le risorse. Orario notturno/mattutino
-    // per non interferire con l'operatività.
-    cron.schedule('0 6 * * *', () => {
-      runAutomazioniCheck().catch(err => console.error('Errore job automazioni:', err));
+    // Controllo automazioni email: tick orario, ma ogni società viene controllata solo
+    // secondo la propria cadenza (Configurazione → Automazioni, default ogni giorno alle 6:00).
+    cron.schedule('0 * * * *', () => {
+      runAutomazioniPianificate().catch(err => console.error('Errore job automazioni:', err));
     }, { timezone: 'Europe/Rome' });
 
     // Ticket risolti senza risposta del cliente: chiusura automatica (vedi utils/ticket.js)

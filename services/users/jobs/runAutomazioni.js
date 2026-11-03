@@ -3,7 +3,8 @@
 const { Op } = require('sequelize');
 const { Societa, Socio, AutomazioneConfig, AutomazioneInvio } = require('../models');
 const { TIPI, getDefinizione, resolveConfig } = require('../utils/automazioniRegistry');
-const { computeOccorrenzaSocieta, computeOccorrenzaSocioField, isNellaFinestraInvio, todayUTC } = require('../utils/deadlineCalculator');
+const { computeOccorrenzaSocieta, computeOccorrenzaSocioField, isNellaFinestraInvio, todayUTC, toDateOnly } = require('../utils/deadlineCalculator');
+const pianificazione = require('../utils/automazioniPianificazione');
 const { sendEmail } = require('../utils/mailService');
 
 const PAYMENTS_SERVICE_URL = process.env.PAYMENTS_SERVICE_URL || 'http://payments_ms:3000';
@@ -64,12 +65,38 @@ async function inviaEmailAutomazione({ def, config, societa, socio, to, scadenza
   }
 }
 
+// Abbonamenti della società, uno per socio e abbonamento con la scadenza più recente
+// (solo pagamenti effettivi: niente annullati né proforma). null se payments_ms non risponde.
+async function fetchAbbonamenti(societaId) {
+  try {
+    const resp = await fetch(`${PAYMENTS_SERVICE_URL}/api/internal/abbonamenti-scadenza?societaId=${societaId}`, {
+      headers: { 'x-internal-secret': INTERNAL_API_SECRET },
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    return await resp.json();
+  } catch (err) {
+    console.error('Errore recupero abbonamenti da payments_ms:', err.message);
+    return null;
+  }
+}
+
+// Soci con almeno un abbonamento non ancora scaduto (scadenza >= oggi).
+function sociConAbbonamentoAttivo(abbonamenti, today) {
+  const oggi = toDateOnly(today);
+  return new Set(abbonamenti
+    .filter(a => a.socio_id != null && a.data_scadenza_abbonamento && String(a.data_scadenza_abbonamento).slice(0, 10) >= oggi)
+    .map(a => Number(a.socio_id)));
+}
+
 // Tipi con destinatario 'socio_field' (organo_amministrazione, doc_presidente,
 // certificato_medico): la scadenza è il valore di un campo del socio; se non
 // impostato, nessuna comunicazione viene inviata. Riceve solo il socio su cui
 // il campo è valorizzato.
 async function processSocioField(tipo, def, config, societa, today, contatore) {
   const soci = await Socio.findAll({ where: { societa_id: societa.id, [def.socioField]: { [Op.not]: null } } });
+  // Certificato medico: solo ai soci con un abbonamento attivo. Caricati una volta
+  // sola e solo se c'è almeno un socio nella finestra di invio.
+  let attivi;
   for (const socio of soci) {
     const valore = socio[def.socioField];
     const occorrenza = computeOccorrenzaSocioField(config, valore);
@@ -78,6 +105,21 @@ async function processSocioField(tipo, def, config, societa, today, contatore) {
     if (await giaInviata({ societaId: societa.id, tipo, socioId: socio.id, scadenzaRiferimento: scadenza })) {
       contatore.saltati += 1;
       continue;
+    }
+    if (def.richiedeAbbonamentoAttivo) {
+      if (attivi === undefined) {
+        const abbonamenti = await fetchAbbonamenti(societa.id);
+        // payments_ms non raggiungibile: meglio non inviare (si riprova al prossimo controllo)
+        if (!abbonamenti) return;
+        attivi = sociConAbbonamentoAttivo(abbonamenti, today);
+      }
+      if (!attivi.has(Number(socio.id))) {
+        // Registrato (esito NON_INVIATO) per mostrarlo nel Log invii; non conta come inviato,
+        // quindi se il socio rinnova l'abbonamento prima della scadenza l'email parte.
+        contatore.saltati += 1;
+        await registraInvio({ societaId: societa.id, tipo, socioId: socio.id, scadenzaRiferimento: scadenza, destinatario: socio.email, esito: 'NON_INVIATO', dettaglioErrore: 'Nessun abbonamento attivo' });
+        continue;
+      }
     }
     const { esito, errore } = await inviaEmailAutomazione({ def, config, societa, socio, to: socio.email, scadenza, contatore });
     await registraInvio({ societaId: societa.id, tipo, socioId: socio.id, scadenzaRiferimento: scadenza, destinatario: socio.email, esito, dettaglioErrore: errore });
@@ -108,16 +150,8 @@ async function processTuttiSoci(tipo, def, config, societa, today, contatore) {
 // abbonamenti attivi con scadenze diverse (o anche uguali) — ognuno genera un
 // invio/log indipendente, distinto tramite riferimento_extra (abbonamento_id).
 async function processAbbonamento(tipo, def, config, societa, today, contatore) {
-  let abbonamenti = [];
-  try {
-    const resp = await fetch(`${PAYMENTS_SERVICE_URL}/api/internal/abbonamenti-scadenza?societaId=${societa.id}`, {
-      headers: { 'x-internal-secret': INTERNAL_API_SECRET },
-    });
-    if (resp.ok) abbonamenti = await resp.json();
-  } catch (err) {
-    console.error('Errore recupero abbonamenti da payments_ms:', err.message);
-    return;
-  }
+  const abbonamenti = await fetchAbbonamenti(societa.id);
+  if (!abbonamenti) return;
 
   for (const item of abbonamenti) {
     if (!item.socio_id || !item.data_scadenza_abbonamento) continue;
@@ -138,7 +172,7 @@ async function processAbbonamento(tipo, def, config, societa, today, contatore) 
 
 /**
  * Controlla tutte le automazioni configurate e invia le email dovute.
- * Chiamata una volta al giorno dal cron (vedi index.js) e a richiesta
+ * Chiamata per ogni società secondo la sua cadenza (runAutomazioniPianificate) e a richiesta
  * dall'endpoint POST /automazioni/run per test manuali.
  */
 async function runAutomazioniCheck({ societaId } = {}) {
@@ -177,4 +211,29 @@ async function runAutomazioniCheck({ societaId } = {}) {
   return contatore;
 }
 
-module.exports = { runAutomazioniCheck };
+/**
+ * Tick orario (vedi index.js): controlla solo le società per cui è arrivato lo slot
+ * della propria cadenza (Configurazione → Automazioni) e ne registra l'esecuzione.
+ */
+let inCorso = false;
+async function runAutomazioniPianificate(now = new Date()) {
+  if (inCorso) return; // un controllo lungo non si sovrappone al tick successivo
+  inCorso = true;
+  try {
+    const societaList = await Societa.findAll({ attributes: ['id', 'automazioni_pianificazione', 'automazioni_ultimo_controllo'] });
+    for (const s of societaList) {
+      if (!pianificazione.daControllare(s, now)) continue;
+      try {
+        await runAutomazioniCheck({ societaId: s.id });
+      } catch (err) {
+        console.error(`[automazioni] controllo pianificato fallito per società ${s.id}:`, err);
+      }
+      // Registrato anche in caso di errore: si riprova al prossimo slot, non a ogni ora
+      await Societa.update({ automazioni_ultimo_controllo: new Date() }, { where: { id: s.id } });
+    }
+  } finally {
+    inCorso = false;
+  }
+}
+
+module.exports = { runAutomazioniCheck, runAutomazioniPianificate };
