@@ -68,6 +68,7 @@ class AutomazioneController {
           applicabile: config.applicabile,
           attiva: config.attiva,
           giorni_anticipo: config.giorni_anticipo,
+          ripeti_ogni_giorni: config.ripeti_ogni_giorni,
           extra_config: config.extra_config,
           oggetto_email: config.oggetto_email,
           testo_email: config.testo_email,
@@ -133,6 +134,11 @@ class AutomazioneController {
           oggetto_email: rule.oggetto_email || null,
           testo_email: rule.testo_email || null,
         };
+        // Solo se presente: Scadenziario → Comunicazioni salva le regole senza questo campo
+        if ('ripeti_ogni_giorni' in rule) {
+          const n = parseInt(rule.ripeti_ogni_giorni, 10);
+          payload.ripeti_ogni_giorni = Number.isInteger(n) && n > 0 ? n : null;
+        }
 
         const [row] = await AutomazioneConfig.findOrCreate({
           where: { societa_id: societaId, tipo: rule.tipo },

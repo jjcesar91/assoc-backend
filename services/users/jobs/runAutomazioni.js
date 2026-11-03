@@ -3,7 +3,7 @@
 const { Op } = require('sequelize');
 const { Societa, Socio, AutomazioneConfig, AutomazioneInvio } = require('../models');
 const { TIPI, getDefinizione, resolveConfig } = require('../utils/automazioniRegistry');
-const { computeOccorrenzaSocieta, computeOccorrenzaSocioField, isNellaFinestraInvio, todayUTC, toDateOnly } = require('../utils/deadlineCalculator');
+const { computeOccorrenzaSocieta, computeOccorrenzaSocioField, isNellaFinestraInvio, todayUTC, toDateOnly, addDays } = require('../utils/deadlineCalculator');
 const pianificazione = require('../utils/automazioniPianificazione');
 const { sendEmail } = require('../utils/mailService');
 
@@ -16,20 +16,30 @@ function formatDataIt(dateStr) {
   return `${d}/${m}/${y}`;
 }
 
-// Registra/aggiorna la riga di log per una specifica occorrenza (chiave di
-// idempotenza). Un solo run "vincente" per occorrenza: se esiste già un
-// log con esito INVIATO il chiamante non deve nemmeno provare a inviare.
-async function registraInvio({ societaId, tipo, socioId, riferimentoExtra, scadenzaRiferimento, destinatario, esito, dettaglioErrore }) {
-  const where = { societa_id: societaId, tipo, socio_id: socioId ?? null, riferimento_extra: riferimentoExtra ?? null, scadenza_riferimento: scadenzaRiferimento };
+// Registra/aggiorna la riga di log per uno specifico promemoria di un'occorrenza
+// (chiave di idempotenza: occorrenza + promemoria_n). Un solo run "vincente" per
+// promemoria: se esiste già un log INVIATO il chiamante non prova nemmeno a inviare.
+async function registraInvio({ societaId, tipo, socioId, riferimentoExtra, scadenzaRiferimento, promemoriaN, destinatario, esito, dettaglioErrore }) {
+  const where = { societa_id: societaId, tipo, socio_id: socioId ?? null, riferimento_extra: riferimentoExtra ?? null, scadenza_riferimento: scadenzaRiferimento, promemoria_n: promemoriaN || 1 };
   const [row] = await AutomazioneInvio.findOrCreate({ where, defaults: { ...where, destinatario, esito, dettaglio_errore: dettaglioErrore, data_invio: new Date() } });
   await row.update({ destinatario, esito, dettaglio_errore: dettaglioErrore || null, data_invio: new Date() });
 }
 
-async function giaInviata({ societaId, tipo, socioId, riferimentoExtra, scadenzaRiferimento }) {
-  const row = await AutomazioneInvio.findOne({
+// Numero del promemoria da inviare oggi per l'occorrenza, 0 se non è dovuto:
+// - nessun invio riuscito → 1 (primo promemoria, siamo già nella finestra di invio);
+// - con ripeti_ogni_giorni = N → il successivo quando sono passati almeno N giorni
+//   dall'ultimo invio riuscito (fino al giorno della scadenza compreso);
+// - senza ripetizione → 0 (una sola email per occorrenza, come prima).
+async function promemoriaDovuto({ societaId, tipo, socioId, riferimentoExtra, scadenzaRiferimento }, config, today) {
+  const ultimo = await AutomazioneInvio.findOne({
     where: { societa_id: societaId, tipo, socio_id: socioId ?? null, riferimento_extra: riferimentoExtra ?? null, scadenza_riferimento: scadenzaRiferimento, esito: 'INVIATO' },
+    order: [['promemoria_n', 'DESC']],
   });
-  return !!row;
+  if (!ultimo) return 1;
+  const ogni = config.ripeti_ogni_giorni;
+  if (!ogni || ogni <= 0) return 0;
+  const giornoUltimo = new Date(`${toDateOnly(new Date(ultimo.data_invio))}T00:00:00Z`);
+  return today.getTime() >= addDays(giornoUltimo, ogni).getTime() ? (ultimo.promemoria_n || 1) + 1 : 0;
 }
 
 // Campi dinamici dei testi personalizzabili (Scadenziario → Comunicazioni):
@@ -102,7 +112,8 @@ async function processSocioField(tipo, def, config, societa, today, contatore) {
     const occorrenza = computeOccorrenzaSocioField(config, valore);
     if (!isNellaFinestraInvio(occorrenza, today)) continue;
     const scadenza = occorrenza.scadenza;
-    if (await giaInviata({ societaId: societa.id, tipo, socioId: socio.id, scadenzaRiferimento: scadenza })) {
+    const promemoriaN = await promemoriaDovuto({ societaId: societa.id, tipo, socioId: socio.id, scadenzaRiferimento: scadenza }, config, today);
+    if (!promemoriaN) {
       contatore.saltati += 1;
       continue;
     }
@@ -117,12 +128,12 @@ async function processSocioField(tipo, def, config, societa, today, contatore) {
         // Registrato (esito NON_INVIATO) per mostrarlo nel Log invii; non conta come inviato,
         // quindi se il socio rinnova l'abbonamento prima della scadenza l'email parte.
         contatore.saltati += 1;
-        await registraInvio({ societaId: societa.id, tipo, socioId: socio.id, scadenzaRiferimento: scadenza, destinatario: socio.email, esito: 'NON_INVIATO', dettaglioErrore: 'Nessun abbonamento attivo' });
+        await registraInvio({ societaId: societa.id, tipo, socioId: socio.id, scadenzaRiferimento: scadenza, promemoriaN, destinatario: socio.email, esito: 'NON_INVIATO', dettaglioErrore: 'Nessun abbonamento attivo' });
         continue;
       }
     }
     const { esito, errore } = await inviaEmailAutomazione({ def, config, societa, socio, to: socio.email, scadenza, contatore });
-    await registraInvio({ societaId: societa.id, tipo, socioId: socio.id, scadenzaRiferimento: scadenza, destinatario: socio.email, esito, dettaglioErrore: errore });
+    await registraInvio({ societaId: societa.id, tipo, socioId: socio.id, scadenzaRiferimento: scadenza, promemoriaN, destinatario: socio.email, esito, dettaglioErrore: errore });
   }
 }
 
@@ -137,12 +148,13 @@ async function processTuttiSoci(tipo, def, config, societa, today, contatore) {
   const soci = await Socio.findAll({ where: { societa_id: societa.id, email: { [Op.not]: null } } });
   for (const socio of soci) {
     if (!socio.email) continue;
-    if (await giaInviata({ societaId: societa.id, tipo, socioId: socio.id, scadenzaRiferimento: scadenza })) {
+    const promemoriaN = await promemoriaDovuto({ societaId: societa.id, tipo, socioId: socio.id, scadenzaRiferimento: scadenza }, config, today);
+    if (!promemoriaN) {
       contatore.saltati += 1;
       continue;
     }
     const { esito, errore } = await inviaEmailAutomazione({ def, config, societa, socio, to: socio.email, scadenza, contatore });
-    await registraInvio({ societaId: societa.id, tipo, socioId: socio.id, scadenzaRiferimento: scadenza, destinatario: socio.email, esito, dettaglioErrore: errore });
+    await registraInvio({ societaId: societa.id, tipo, socioId: socio.id, scadenzaRiferimento: scadenza, promemoriaN, destinatario: socio.email, esito, dettaglioErrore: errore });
   }
 }
 
@@ -159,14 +171,15 @@ async function processAbbonamento(tipo, def, config, societa, today, contatore) 
     if (!isNellaFinestraInvio(occorrenza, today)) continue;
     const scadenza = occorrenza.scadenza;
     const riferimentoExtra = item.abbonamento_id ?? null;
-    if (await giaInviata({ societaId: societa.id, tipo, socioId: item.socio_id, riferimentoExtra, scadenzaRiferimento: scadenza })) {
+    const promemoriaN = await promemoriaDovuto({ societaId: societa.id, tipo, socioId: item.socio_id, riferimentoExtra, scadenzaRiferimento: scadenza }, config, today);
+    if (!promemoriaN) {
       contatore.saltati += 1;
       continue;
     }
     const socio = await Socio.findByPk(item.socio_id);
     const to = socio?.email;
     const { esito, errore } = await inviaEmailAutomazione({ def, config, societa, socio, to, scadenza, contatore });
-    await registraInvio({ societaId: societa.id, tipo, socioId: item.socio_id, riferimentoExtra, scadenzaRiferimento: scadenza, destinatario: to, esito, dettaglioErrore: errore });
+    await registraInvio({ societaId: societa.id, tipo, socioId: item.socio_id, riferimentoExtra, scadenzaRiferimento: scadenza, promemoriaN, destinatario: to, esito, dettaglioErrore: errore });
   }
 }
 

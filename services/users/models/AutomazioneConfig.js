@@ -29,6 +29,12 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: false,
       defaultValue: 15
     },
+    // Ripete il promemoria ogni N giorni fino alla scadenza (null/0 = una sola email).
+    // Es. giorni_anticipo 6 e ripeti 3: email 6 e 3 giorni prima e il giorno della scadenza.
+    ripeti_ogni_giorni: {
+      type: DataTypes.INTEGER,
+      allowNull: true
+    },
     // Data di riferimento inserita manualmente (es. scadenza organo di
     // amministrazione / documento del presidente): non calcolabile da altri campi.
     data_riferimento: {

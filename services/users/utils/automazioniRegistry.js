@@ -160,6 +160,7 @@ function resolveConfig(tipo, saved, societa) {
     applicabile,
     attiva: saved ? saved.attiva : applicabile,
     giorni_anticipo: saved?.giorni_anticipo ?? def.giorniAnticipoDefault,
+    ripeti_ogni_giorni: saved?.ripeti_ogni_giorni || null,
     extra_config: saved?.extra_config ?? def.defaultExtra ?? null,
     oggetto_email: saved?.oggetto_email || null,
     testo_email: saved?.testo_email || null,

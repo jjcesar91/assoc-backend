@@ -42,13 +42,20 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.INTEGER,
       allowNull: true
     },
+    // Numero del promemoria per la stessa occorrenza (1 = primo invio; >1 = ripetizioni,
+    // vedi AutomazioneConfig.ripeti_ogni_giorni). Parte della chiave di idempotenza.
+    promemoria_n: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 1
+    },
     destinatario: {
       type: DataTypes.STRING,
       allowNull: true
     },
     esito: {
       type: DataTypes.STRING(20),
-      allowNull: false // 'INVIATO' | 'ERRORE'
+      allowNull: false // 'INVIATO' | 'ERRORE' | 'NON_INVIATO'
     },
     dettaglio_errore: {
       type: DataTypes.TEXT,
