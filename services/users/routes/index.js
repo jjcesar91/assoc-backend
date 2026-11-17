@@ -24,6 +24,7 @@ router.get('/health', (req, res) => {
 
 // --- Rotte interne (service-to-service, protette da secret) — PRIMA dell'auth utente ---
 router.post('/internal/ricevuta-uploaded', requireInternal, InternalController.ricevutaUploaded);
+router.post('/internal/soci/:id/storico', requireInternal, InternalController.creaStorico);
 router.get('/internal/licenze-stato', requireInternal, licenzeController.internalStato);
 router.get('/internal/societa-licenze', requireInternal, licenzeController.internalSocietaLicenze);
 router.get('/internal/licenza-limiti', requireInternal, licenzeController.internalLimiti);

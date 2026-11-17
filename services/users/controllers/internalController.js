@@ -1,4 +1,4 @@
-const { Societa, SocioStorico } = require('../models');
+const { Societa, Socio, SocioStorico } = require('../models');
 const { sendEmail } = require('../utils/mailService');
 
 function formatData(dt) {
@@ -92,6 +92,34 @@ async function logRicevutaAStorico({ ordine, socio, ricevuta, sostituzione }) {
 }
 
 const InternalController = {
+    // POST /internal/soci/:id/storico — riga di storico scritta da un altro servizio
+    // per conto di un operatore (es. proroga scadenza abbonamento da payments).
+    // body: { societa_id, tipo, azione, dettagli?, owner_id?, owner_label? }
+    creaStorico: async (req, res) => {
+        try {
+            const { societa_id, tipo, azione, dettagli, owner_id, owner_label } = req.body || {};
+            if (!tipo || !azione) return res.status(400).json({ error: 'tipo e azione sono obbligatori' });
+            const socio = await Socio.findByPk(req.params.id, { attributes: ['id', 'societa_id'] });
+            if (!socio || (societa_id != null && String(socio.societa_id) !== String(societa_id))) {
+                return res.status(404).json({ error: 'Socio non trovato' });
+            }
+            const entry = await SocioStorico.create({
+                socio_id: socio.id,
+                tipo,
+                azione,
+                dettagli: dettagli || null,
+                owner_tipo: owner_id || owner_label ? 'utente' : 'sistema',
+                owner_id: owner_id || null,
+                owner_label: owner_label || 'Sistema',
+                data_evento: new Date(),
+            });
+            return res.status(201).json(entry);
+        } catch (e) {
+            console.error('Errore scrittura storico (interno):', e);
+            return res.status(500).json({ error: 'Errore scrittura storico' });
+        }
+    },
+
     // POST /api/internal/ricevuta-uploaded
     ricevutaUploaded: async (req, res) => {
         try {

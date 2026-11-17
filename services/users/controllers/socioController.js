@@ -705,8 +705,11 @@ class SocioController {
     async getStorico(req, res) {
         try {
             const socio_id = req.params.id;
+            // ?tipo=proroga: solo le righe di quel tipo (es. dettaglio scadenza nello Scadenziario)
+            const where = { socio_id };
+            if (req.query.tipo) where.tipo = String(req.query.tipo);
             const entries = await SocioStorico.findAll({
-                where: { socio_id },
+                where,
                 order: [['data_evento', 'DESC']],
             });
             return res.json(entries);

@@ -10,6 +10,7 @@ const FornitoreController = require('../controllers/FornitoreController');
 const RicevutaController = require('../controllers/RicevutaController');
 const SocioOrdineController = require('../controllers/SocioOrdineController');
 const RicevutaTelematicaController = require('../controllers/RicevutaTelematicaController');
+const ProrogaScadenzaController = require('../controllers/ProrogaScadenzaController');
 const authenticateToken = require('../middleware/auth');
 const requireInternal = require('../middleware/requireInternal');
 
@@ -129,6 +130,7 @@ router.put('/:id', PaymentController.update);
 router.delete('/:id/proforma', PaymentController.deleteProforma);
 router.delete('/:id', PaymentController.delete);
 router.patch('/:id/annulla', PaymentController.annulla);
+router.patch('/:id/proroga-scadenza', ProrogaScadenzaController.proroga);
 router.patch('/:id/converti-proforma', PaymentController.convertiProforma);
 
 module.exports = router;
