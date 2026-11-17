@@ -2,7 +2,7 @@
 
 const { Op } = require('sequelize');
 const { Societa, Socio, AutomazioneConfig, AutomazioneInvio } = require('../models');
-const { TIPI, getDefinizione, resolveConfig } = require('../utils/automazioniRegistry');
+const { TIPI, getDefinizione, resolveConfig, socioDestinatarioAmmesso } = require('../utils/automazioniRegistry');
 const { computeOccorrenzaSocieta, computeOccorrenzaSocioField, isNellaFinestraInvio, todayUTC, toDateOnly, addDays } = require('../utils/deadlineCalculator');
 const pianificazione = require('../utils/automazioniPianificazione');
 const { sendEmail } = require('../utils/mailService');
@@ -108,6 +108,7 @@ async function processSocioField(tipo, def, config, societa, today, contatore) {
   // sola e solo se c'è almeno un socio nella finestra di invio.
   let attivi;
   for (const socio of soci) {
+    if (!socioDestinatarioAmmesso(def, socio)) continue;
     const valore = socio[def.socioField];
     const occorrenza = computeOccorrenzaSocioField(config, valore);
     if (!isNellaFinestraInvio(occorrenza, today)) continue;
@@ -140,6 +141,7 @@ async function processSocioField(tipo, def, config, societa, today, contatore) {
 // Tipi con destinatario 'tutti_soci' (bilancio, runts, contributi_pubblici,
 // cu, attivita_didattiche): la scadenza è unica per la società, ma l'email va
 // a ciascun socio (trasparenza verso gli associati) — un invio/log per socio.
+// Per le 'ets_point' solo ai soci associazione ammessi (socioDestinatarioAmmesso).
 async function processTuttiSoci(tipo, def, config, societa, today, contatore) {
   const occorrenza = computeOccorrenzaSocieta(tipo, config, societa, today);
   if (!isNellaFinestraInvio(occorrenza, today)) return;
@@ -148,6 +150,7 @@ async function processTuttiSoci(tipo, def, config, societa, today, contatore) {
   const soci = await Socio.findAll({ where: { societa_id: societa.id, email: { [Op.not]: null } } });
   for (const socio of soci) {
     if (!socio.email) continue;
+    if (!socioDestinatarioAmmesso(def, socio)) continue;
     const promemoriaN = await promemoriaDovuto({ societaId: societa.id, tipo, socioId: socio.id, scadenzaRiferimento: scadenza }, config, today);
     if (!promemoriaN) {
       contatore.saltati += 1;

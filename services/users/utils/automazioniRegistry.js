@@ -14,6 +14,11 @@
 //  - 'per_abbonamento' un invio per ciascun abbonamento in scadenza (un socio
 //                     può averne più di uno attivo contemporaneamente).
 //
+// Automazioni di categoria 'ets_point': le invia una società "Gestore ETS Point"
+// ai propri soci di tipo associazione. I controlli sul tipo di associazione
+// (requisitoSocio, es. solo APS) si applicano quindi al socio destinatario,
+// non alla società che invia: vedi socioDestinatarioAmmesso.
+//
 // deadlineStrategy (come si calcola la data di scadenza):
 //  - 'socio_field'            Socio.<socioField> (nessuna ricorrenza automatica:
 //                             quando l'operatore aggiorna il campo si apre un
@@ -64,7 +69,8 @@ const REGISTRY = {
     destinatario: 'tutti_soci',
     offsetGiorni: 180,
     giorniAnticipoDefault: 60,
-    applicabile: (societa) => societa.tipo_associazione === 'APS',
+    applicabile: () => true,
+    requisitoSocio: { label: 'APS', match: (socio) => socio.tipo_associazione === 'APS' },
     oggettoDefault: (societa) => `Scadenza deposito bilancio RUNTS - ${societa.denominazione}`,
     testoDefault: (societa) => `Gentile socio,<br/>si ricorda che il bilancio di ${societa.denominazione} deve essere depositato sul RUNTS entro 180 giorni dalla chiusura dell'anno associativo.`,
   },
@@ -100,7 +106,8 @@ const REGISTRY = {
     // Default: 1 gennaio e 1 luglio, sovrascrivibili per società (extra_config).
     defaultExtra: { mese1: 1, giorno1: 1, mese2: 7, giorno2: 1 },
     giorniAnticipoDefault: 15,
-    applicabile: (societa) => ['ASD', 'SSD'].includes(societa.tipo_associazione),
+    applicabile: () => true,
+    requisitoSocio: { label: 'ASD/SSD', match: (socio) => ['ASD', 'SSD'].includes(socio.tipo_associazione) },
     oggettoDefault: (societa) => `Promemoria attività didattiche - ${societa.denominazione}`,
     testoDefault: (societa) => `Gentile socio,<br/>promemoria periodico per la gestione delle attività didattiche di ${societa.denominazione}.`,
   },
@@ -167,4 +174,13 @@ function resolveConfig(tipo, saved, societa) {
   };
 }
 
-module.exports = { REGISTRY, TIPI, getDefinizione, getAmbito, resolveConfig };
+// Il socio può ricevere l'automazione? Per le 'ets_point' solo i soci di tipo
+// associazione che soddisfano l'eventuale requisitoSocio; le altre categorie
+// non hanno vincoli sul destinatario.
+function socioDestinatarioAmmesso(def, socio) {
+  if (def.categoria !== 'ets_point') return true;
+  if (socio.tipo_socio !== 'associazione') return false;
+  return def.requisitoSocio ? !!def.requisitoSocio.match(socio) : true;
+}
+
+module.exports = { REGISTRY, TIPI, getDefinizione, getAmbito, resolveConfig, socioDestinatarioAmmesso };

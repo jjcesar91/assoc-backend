@@ -66,6 +66,8 @@ class AutomazioneController {
           destinatario: def.destinatario,
           label: def.label,
           applicabile: config.applicabile,
+          // Filtro sui destinatari (solo ETS Point): es. "APS" = solo soci associazione APS
+          requisito_socio: def.requisitoSocio?.label ?? null,
           attiva: config.attiva,
           giorni_anticipo: config.giorni_anticipo,
           ripeti_ogni_giorni: config.ripeti_ogni_giorni,
