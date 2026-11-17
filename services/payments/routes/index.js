@@ -71,6 +71,7 @@ router.get('/public/ricevuta/:token', RicevutaController.getStatus);
 router.get('/public/ricevuta/:token/file', RicevutaController.getFile);
 router.post('/public/ricevuta/:token', handleRicevutaUpload, RicevutaController.upload);
 router.put('/public/ricevuta/:token', handleRicevutaUpload, RicevutaController.reupload);
+router.get('/public/proforma-telematica/verifica', RicevutaTelematicaController.verifica);
 router.post('/public/proforma-telematica', RicevutaTelematicaController.create);
 
 router.use(authenticateToken);

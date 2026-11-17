@@ -76,7 +76,56 @@ async function fetchProdottoPubblico(id) {
     }
 }
 
+// Proforma o ricevuta (non annullata) già presente per il socio nell'anno contabile
+// corrente: stesso prodotto, o una qualsiasi quota associativa se il prodotto lo è.
+// Usata sia dalla verifica preventiva del form sia dalla creazione.
+async function cercaDocumentoEsistente({ societa_id, prodotto, socio_id, codice_fiscale, cookieHeader }) {
+    return findDocumentoSocioInAnno({
+        societa_id,
+        socio_id: socio_id || null,
+        codice_fiscale: codice_fiscale || null,
+        data_pagamento: new Date().toISOString().split('T')[0],
+        societaTipo: await fetchSocietaTipoPubblico(societa_id, cookieHeader),
+        includeProforma: true,
+        match: p => contieneProdotto(p, prodotto.id)
+            || (prodotto.type === 'quota_associativa' && hasQuotaAssociativa(p.quote_types)),
+    });
+}
+
+function messaggioDuplicato(esistente) {
+    const isProforma = esistente.tipo_documento === 'proforma';
+    const rif = !isProforma && esistente.numero_ricevuta ? ` n. ${esistente.numero_ricevuta}` : '';
+    return `Per questo socio esiste già ${isProforma ? 'una proforma' : `una ricevuta${rif}`} per l'anno in corso`;
+}
+
 module.exports = {
+    // GET /api/public/proforma-telematica/verifica?societa_id=&prodotto_id=&codice_fiscale=&socio_id=
+    // Verifica preventiva per il form pubblico: { esiste, messaggio }.
+    verifica: async (req, res) => {
+        try {
+            const { societa_id, prodotto_id, codice_fiscale, socio_id } = req.query || {};
+            if (!societa_id || !prodotto_id || (!codice_fiscale && !socio_id)) {
+                return res.status(400).json({ error: 'Dati mancanti per la verifica' });
+            }
+            const prodotto = await fetchProdottoPubblico(prodotto_id);
+            if (!prodotto || String(prodotto.societaId) !== String(societa_id)) {
+                return res.status(400).json({ error: 'Prodotto non valido per questa società' });
+            }
+            const esistente = await cercaDocumentoEsistente({
+                societa_id, prodotto, socio_id, codice_fiscale, cookieHeader: req.headers['cookie'],
+            });
+            if (!esistente) return res.json({ esiste: false });
+            return res.json({
+                esiste: true,
+                messaggio: `${messaggioDuplicato(esistente)}.`,
+                tipo_documento: esistente.tipo_documento || 'pagamento',
+            });
+        } catch (err) {
+            console.error('Errore verifica proforma telematica:', err);
+            return res.status(500).json({ error: 'Errore durante la verifica' });
+        }
+    },
+
     // POST /api/public/proforma-telematica
     // body: { societa_id, prodotto_id, socio: { id, nome, cognome, codice_fiscale } }
     create: async (req, res) => {
@@ -94,23 +143,13 @@ module.exports = {
             const oggi = new Date().toISOString().split('T')[0];
 
             // Niente proforma se nell'anno contabile corrente esiste già, per lo
-            // stesso socio, una proforma o una ricevuta (non annullata) dello stesso
-            // prodotto — o di una qualsiasi quota associativa se il prodotto lo è.
-            const esistente = await findDocumentoSocioInAnno({
-                societa_id,
-                socio_id: socio.id,
-                codice_fiscale: socio.codice_fiscale || null,
-                data_pagamento: oggi,
-                societaTipo: await fetchSocietaTipoPubblico(societa_id, req.headers['cookie']),
-                includeProforma: true,
-                match: p => contieneProdotto(p, prodotto.id)
-                    || (prodotto.type === 'quota_associativa' && hasQuotaAssociativa(p.quote_types)),
+            // stesso socio, una proforma o una ricevuta dello stesso prodotto.
+            const esistente = await cercaDocumentoEsistente({
+                societa_id, prodotto, socio_id: socio.id, codice_fiscale: socio.codice_fiscale, cookieHeader: req.headers['cookie'],
             });
             if (esistente) {
-                const isProforma = esistente.tipo_documento === 'proforma';
-                const rif = !isProforma && esistente.numero_ricevuta ? ` n. ${esistente.numero_ricevuta}` : '';
                 return res.status(409).json({
-                    error: `Per questo socio esiste già ${isProforma ? 'una proforma' : `una ricevuta${rif}`} per l'anno in corso: la proforma non è stata generata.`,
+                    error: `${messaggioDuplicato(esistente)}: la proforma non è stata generata.`,
                     code: 'PROFORMA_TELEMATICA_DUPLICATA',
                     payment_id: esistente.id,
                     tipo_documento: esistente.tipo_documento || 'pagamento',
