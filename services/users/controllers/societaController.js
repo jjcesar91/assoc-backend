@@ -221,7 +221,7 @@ class SocietaController {
             const societa = await Societa.findByPk(id, {
                 attributes: [
                     'id', 'denominazione', 'indirizzo', 'comune', 'cap',
-                    'codice_fiscale', 'partita_iva', 'logo_path', 'footer_text',
+                    'codice_fiscale', 'partita_iva', 'logo_path', 'footer_text', 'receipt_footer_text',
                     'ricevuta_telematica_modulo_id', 'ricevuta_telematica_prodotto_id',
                     'ricevuta_telematica_certificato_secret',
                     // per calcolare l'anno contabile (controllo duplicati proforma telematica)

@@ -149,7 +149,8 @@ module.exports = {
                 utente_nome: nominativo || 'RICEVUTA TELEMATICA',
             });
 
-            return res.status(201).json({ id: created.id, importo: created.importo });
+            // proforma: il record completo, usato dalla pagina pubblica per generarne il PDF
+            return res.status(201).json({ id: created.id, importo: created.importo, proforma: created.toJSON() });
         } catch (err) {
             console.error('Errore creazione proforma telematica:', err);
             return res.status(500).json({ error: 'Errore durante la creazione della proforma' });
