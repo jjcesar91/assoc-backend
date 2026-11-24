@@ -127,6 +127,7 @@ router.put('/giroconto/:id', PaymentController.aggiornaGiroconto);
 router.delete('/giroconto/:id', PaymentController.eliminaGiroconto);
 router.post('/', PaymentController.create);
 router.put('/:id', PaymentController.update);
+router.get('/:id/modifiche', PaymentController.modifiche);
 router.delete('/:id/proforma', PaymentController.deleteProforma);
 router.delete('/:id', PaymentController.delete);
 router.patch('/:id/annulla', PaymentController.annulla);

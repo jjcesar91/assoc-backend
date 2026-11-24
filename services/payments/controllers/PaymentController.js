@@ -1,4 +1,5 @@
-const { Payment, sequelize } = require('../models');
+const { Payment, PaymentModifica, sequelize } = require('../models');
+const { diffModalita, registraModificaModalita } = require('../utils/modificheModalita');
 const { Op } = require('sequelize');
 
 // Restituisce la data di inizio dell'anno associativo corrente (come stringa YYYY-MM-DD)
@@ -493,13 +494,15 @@ exports.eliminaGiroconto = async (req, res) => {
 exports.update = async (req, res) => {
     try {
         const { id } = req.params;
-        const patch = { ...req.body, modificato_da: req.user?.username || req.body.modificato_da || null };
+        // origine_modifica: da dove arriva la modifica (solo per lo storico, non è un campo del pagamento)
+        const { origine_modifica, ...body } = req.body || {};
+        const patch = { ...body, modificato_da: req.user?.username || body.modificato_da || null };
 
         // Controllo unicità solo se la modifica tocca campi che determinano
         // "quota associativa pagata di quel socio in quell'anno": così le modifiche
         // a note/etichette/ricevute su eventuali duplicati storici restano possibili.
         const CAMPI_QUOTA = ['quote_types', 'payment_items', 'socio_id', 'codice_fiscale', 'data_pagamento', 'tipo_documento', 'stato_pagamento', 'societa_id'];
-        if (CAMPI_QUOTA.some(k => k in req.body)) {
+        if (CAMPI_QUOTA.some(k => k in body)) {
             const attuale = await Payment.findByPk(id);
             if (attuale) {
                 const risultato = { ...attuale.get({ plain: true }), ...patch };
@@ -517,6 +520,31 @@ exports.update = async (req, res) => {
             }
         }
 
+        // Modalità di pagamento / conto: ogni cambio effettivo resta tracciato
+        // (payment_modifiche + storico socio), nella stessa transazione dell'update.
+        if ('modalita_pagamento' in body || 'conto_destinazione' in body) {
+            const t = await sequelize.transaction();
+            try {
+                const prima = await Payment.findByPk(id, { transaction: t, lock: t.LOCK.UPDATE });
+                if (!prima) { await t.rollback(); return res.status(404).json({ error: 'Pagamento non trovato' }); }
+                const snapshot = prima.get({ plain: true });
+                const diff = diffModalita(snapshot, body);
+                await prima.update(patch, { transaction: t });
+                if (diff) {
+                    await registraModificaModalita({ prima: snapshot, diff, user: req.user, origine: origine_modifica, transaction: t });
+                }
+                await t.commit();
+                return res.json(await Payment.findByPk(id));
+            } catch (err) {
+                if (!t.finished) await t.rollback();
+                if (err.code === 'STORICO_SOCIO') {
+                    console.error('Modifica pagamento annullata:', err.message);
+                    return res.status(502).json({ error: 'Impossibile registrare la modifica nello storico del socio: nessuna modifica effettuata. Riprova.' });
+                }
+                throw err;
+            }
+        }
+
         const [updated] = await Payment.update(patch, { where: { id } });
         if (updated) {
             const updatedPayment = await Payment.findByPk(id);
@@ -526,6 +554,22 @@ exports.update = async (req, res) => {
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Failed to update payment' });
+    }
+};
+
+// GET /:id/modifiche → modifiche a modalità di pagamento e conto, dalla più recente
+exports.modifiche = async (req, res) => {
+    try {
+        const p = await Payment.findByPk(req.params.id, { attributes: ['id', 'societa_id'] });
+        if (!p) return res.status(404).json({ error: 'Pagamento non trovato' });
+        const user = req.user || {};
+        const consentite = [...(Array.isArray(user.societaIds) ? user.societaIds : []), user.societaId].filter(v => v != null).map(String);
+        if (user.role !== 'superuser' && !consentite.includes(String(p.societa_id))) return res.sendStatus(403);
+        const righe = await PaymentModifica.findAll({ where: { payment_id: p.id }, order: [['createdAt', 'DESC']], limit: 100 });
+        res.json(righe);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Errore nel recupero delle modifiche' });
     }
 };
 
