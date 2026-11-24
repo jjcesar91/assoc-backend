@@ -1,5 +1,21 @@
 const { Payment, PaymentModifica, sequelize } = require('../models');
-const { diffModalita, registraModificaModalita } = require('../utils/modificheModalita');
+const { diffRicevuta, registraEvento, registraModifica, riferimento, euro, dataIt, rispostaStoricoNonScritto } = require('../utils/storicoRicevuta');
+
+// Esegue `fn(t)` in una transazione: se lo storico (ricevuta/socio) non si scrive
+// la modifica viene annullata e si risponde 502. Ritorna il risultato di fn, o
+// undefined se la risposta è già stata inviata.
+async function inTransazioneConStorico(res, fn) {
+    const t = await sequelize.transaction();
+    try {
+        const out = await fn(t);
+        if (!t.finished) await t.commit();
+        return out;
+    } catch (err) {
+        if (!t.finished) await t.rollback();
+        if (err.code === 'STORICO_SOCIO') { rispostaStoricoNonScritto(res, err); return undefined; }
+        throw err;
+    }
+}
 const { Op } = require('sequelize');
 
 // Restituisce la data di inizio dell'anno associativo corrente (come stringa YYYY-MM-DD)
@@ -520,44 +536,27 @@ exports.update = async (req, res) => {
             }
         }
 
-        // Modalità di pagamento / conto: ogni cambio effettivo resta tracciato
-        // (payment_modifiche + storico socio), nella stessa transazione dell'update.
-        if ('modalita_pagamento' in body || 'conto_destinazione' in body) {
-            const t = await sequelize.transaction();
-            try {
-                const prima = await Payment.findByPk(id, { transaction: t, lock: t.LOCK.UPDATE });
-                if (!prima) { await t.rollback(); return res.status(404).json({ error: 'Pagamento non trovato' }); }
-                const snapshot = prima.get({ plain: true });
-                const diff = diffModalita(snapshot, body);
-                await prima.update(patch, { transaction: t });
-                if (diff) {
-                    await registraModificaModalita({ prima: snapshot, diff, user: req.user, origine: origine_modifica, transaction: t });
-                }
-                await t.commit();
-                return res.json(await Payment.findByPk(id));
-            } catch (err) {
-                if (!t.finished) await t.rollback();
-                if (err.code === 'STORICO_SOCIO') {
-                    console.error('Modifica pagamento annullata:', err.message);
-                    return res.status(502).json({ error: 'Impossibile registrare la modifica nello storico del socio: nessuna modifica effettuata. Riprova.' });
-                }
-                throw err;
-            }
-        }
-
-        const [updated] = await Payment.update(patch, { where: { id } });
-        if (updated) {
-            const updatedPayment = await Payment.findByPk(id);
-            return res.json(updatedPayment);
-        }
-        throw new Error('Payment not found');
+        // Ogni modifica effettiva resta tracciata (storico ricevuta + storico socio),
+        // nella stessa transazione dell'update.
+        let nonTrovato = false;
+        const aggiornato = await inTransazioneConStorico(res, async (t) => {
+            const record = await Payment.findByPk(id, { transaction: t, lock: t.LOCK.UPDATE });
+            if (!record) { nonTrovato = true; return null; }
+            const prima = { ...record.get({ plain: true }) };
+            await record.update(patch, { transaction: t });
+            await registraModifica({ prima, dopo: record.get({ plain: true }), user: req.user, origine: origine_modifica, transaction: t });
+            return record;
+        });
+        if (res.headersSent) return;
+        if (nonTrovato) return res.status(404).json({ error: 'Pagamento non trovato' });
+        return res.json(await Payment.findByPk(aggiornato.id));
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Failed to update payment' });
     }
 };
 
-// GET /:id/modifiche → modifiche a modalità di pagamento e conto, dalla più recente
+// GET /:id/modifiche → storico delle modifiche alla ricevuta, dalla più recente
 exports.modifiche = async (req, res) => {
     try {
         const p = await Payment.findByPk(req.params.id, { attributes: ['id', 'societa_id'] });
@@ -576,11 +575,21 @@ exports.modifiche = async (req, res) => {
 exports.delete = async (req, res) => {
     try {
         const { id } = req.params;
-        const deleted = await Payment.destroy({ where: { id } });
-        if (deleted) {
-            return res.status(204).send();
-        }
-        throw new Error('Payment not found');
+        let trovato = false;
+        await inTransazioneConStorico(res, async (t) => {
+            const payment = await Payment.findByPk(id, { transaction: t, lock: t.LOCK.UPDATE });
+            if (!payment) return;
+            trovato = true;
+            const p = payment.get({ plain: true });
+            await payment.destroy({ transaction: t });
+            await registraEvento({
+                p, tipo: 'eliminazione', user: req.user, origine: req.query.origine, transaction: t,
+                descrizione: `Eliminata ${riferimento(p)} (${euro(p.importo)})`,
+            });
+        });
+        if (res.headersSent) return;
+        if (trovato) return res.status(204).send();
+        return res.status(404).json({ error: 'Payment not found' });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Failed to delete payment' });
@@ -597,7 +606,15 @@ exports.deleteProforma = async (req, res) => {
         if (payment.tipo_documento !== 'proforma') {
             return res.status(403).json({ error: 'Only proforma payments can be deleted with this endpoint' });
         }
-        await payment.destroy();
+        await inTransazioneConStorico(res, async (t) => {
+            const p = payment.get({ plain: true });
+            await payment.destroy({ transaction: t });
+            await registraEvento({
+                p, tipo: 'eliminazione', user: req.user, origine: req.query.origine, transaction: t,
+                descrizione: `Eliminata ${riferimento(p)} (${euro(p.importo)})`,
+            });
+        });
+        if (res.headersSent) return;
         return res.status(204).send();
     } catch (err) {
         console.error(err);
@@ -730,7 +747,18 @@ exports.convertiProforma = async (req, res) => {
             updatePayload.conto_destinazione = conto_destinazione;
         }
 
-        await payment.update(updatePayload);
+        const ok = await inTransazioneConStorico(res, async (t) => {
+            const prima = { ...payment.get({ plain: true }) };
+            await payment.update(updatePayload, { transaction: t });
+            const dopo = payment.get({ plain: true });
+            const modifiche = diffRicevuta(prima, dopo);
+            await registraEvento({
+                p: dopo, tipo: 'registrazione', user: req.user, origine: req.body?.origine, transaction: t, modifiche,
+                descrizione: `Proforma #${dopo.id} registrata come pagamento: ricevuta n. ${numero_ricevuta} del ${dataIt(dataRicevutaEff)} (${euro(dopo.importo)})`,
+            });
+            return true;
+        });
+        if (!ok) return;
 
         const updated = await Payment.findByPk(id);
         res.json(updated);
@@ -743,15 +771,22 @@ exports.convertiProforma = async (req, res) => {
 exports.annulla = async (req, res) => {
     try {
         const { id } = req.params;
-        const [updated] = await Payment.update(
-            { stato_pagamento: '3. ANNULLATO CON RICEVUTA', modificato_da: req.user?.username || null },
-            { where: { id } }
-        );
-        if (updated) {
-            const updatedPayment = await Payment.findByPk(id);
-            return res.json(updatedPayment);
-        }
-        throw new Error('Payment not found');
+        let trovato = false;
+        await inTransazioneConStorico(res, async (t) => {
+            const payment = await Payment.findByPk(id, { transaction: t, lock: t.LOCK.UPDATE });
+            if (!payment) return;
+            trovato = true;
+            if (String(payment.stato_pagamento || '').startsWith('3.')) return; // già annullata
+            await payment.update({ stato_pagamento: '3. ANNULLATO CON RICEVUTA', modificato_da: req.user?.username || null }, { transaction: t });
+            const p = payment.get({ plain: true });
+            await registraEvento({
+                p, tipo: 'annullamento', user: req.user, origine: req.body?.origine, transaction: t,
+                descrizione: `Annullata ${riferimento(p)} (${euro(p.importo)})`,
+            });
+        });
+        if (res.headersSent) return;
+        if (!trovato) return res.status(404).json({ error: 'Payment not found' });
+        return res.json(await Payment.findByPk(id));
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Failed to annul payment' });
@@ -804,13 +839,22 @@ exports.importVoci = async (req, res) => {
                 const quoteStr = validRows.map(r => r.quota).join(', ');
                 const allTypes = [...new Set(paymentItems.map(pi => pi.quote_types).filter(Boolean))].join(',');
 
-                await payment.update({
-                    payment_items: paymentItems,
-                    quote: quoteStr,
-                    importo: totalImporto,
-                    ...(allTypes ? { quote_types: allTypes } : {}),
-                    modificato_da: req.user?.username || null,
-                });
+                const t = await sequelize.transaction();
+                try {
+                    const prima = { ...payment.get({ plain: true }) };
+                    await payment.update({
+                        payment_items: paymentItems,
+                        quote: quoteStr,
+                        importo: totalImporto,
+                        ...(allTypes ? { quote_types: allTypes } : {}),
+                        modificato_da: req.user?.username || null,
+                    }, { transaction: t });
+                    await registraModifica({ prima, dopo: payment.get({ plain: true }), user: req.user, origine: 'import', transaction: t });
+                    await t.commit();
+                } catch (e) {
+                    if (!t.finished) await t.rollback();
+                    throw e;
+                }
 
                 results.updated.push(numero_ricevuta);
             } catch (e) {

@@ -1,4 +1,5 @@
 const { Payment, sequelize } = require('../models');
+const { registraEvento } = require('../utils/storicoRicevuta');
 
 // Proroga della scadenza di un abbonamento (Scadenziario → Dettaglio scadenza).
 //
@@ -148,6 +149,13 @@ exports.proroga = async (req, res) => {
             console.error('Proroga annullata: storico non scritto', storicoRes.status);
             return res.status(502).json({ error: 'Impossibile registrare la proroga nello storico del socio: nessuna modifica effettuata. Riprova.' });
         }
+
+        // Storico della ricevuta (lo storico socio è già scritto sopra, con tipo 'proroga')
+        await registraEvento({
+            p: p.get({ plain: true }), tipo: 'proroga', user, origine: 'scadenziario', transaction: t, storicoSocio: false,
+            descrizione: `Scadenza abbonamento${prodotto ? ` "${prodotto}"` : ''} prorogata. Motivo: ${motivo}`,
+            modifiche: [{ campo: 'data_scadenza_abbonamento', etichetta: 'Scadenza abbonamento', da: formatIt(scad.attuale), a: formatIt(nuovaData) }],
+        });
 
         await t.commit();
         return res.json(await Payment.findByPk(p.id));

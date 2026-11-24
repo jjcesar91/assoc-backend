@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { Payment, RicevutaToken } = require('../models');
+const { registraEvento } = require('../utils/storicoRicevuta');
 
 const ETICHETTA_RICEVUTA = 'Con ricevuta';
 const VALIDITA_MS = 72 * 60 * 60 * 1000; // 72 ore
@@ -233,6 +234,14 @@ async function doUpload(req, res, { allowReplace }) {
     // Marca questo token come quello che ha effettuato il caricamento (per consentirne la modifica)
     record.used_at = now;
     await record.save();
+
+    // Storico della ricevuta (lo storico socio lo scrive il servizio users, vedi sotto).
+    // Best-effort: il file è già salvato, un errore qui non deve far fallire il caricamento.
+    registraEvento({
+      p: payment.get({ plain: true }), tipo: 'quietanza', storicoSocio: false,
+      utenteLabel: 'Socio (link di caricamento)', origine: 'area_soci',
+      descrizione: `${allowReplace ? 'Sostituita' : 'Caricata'} la quietanza di pagamento: ${payment.ricevuta_file_nome}`,
+    }).catch((e) => console.error('Storico quietanza non scritto:', e.message));
 
     // Notifica il users-service: registra l'evento nello storico del socio e,
     // solo al primo caricamento, invia l'email agli amministratori della società
