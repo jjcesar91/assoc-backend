@@ -32,6 +32,18 @@ function getSocioContext(req) {
     return { socioId, societaId };
 }
 
+// Il conto accetta il bonifico? Le modalità stanno nell'array "modalita"; per i
+// conti creati prima delle modalità multiple si ricade sul valore legacy a
+// singolo elemento (attributo "modalita_pagamento_legacy", colonna
+// "modalita_pagamento"). NB: sull'istanza Sequelize non esiste un attributo
+// "modalita_pagamento": leggerlo restituisce sempre undefined.
+function isContoBonifico(conto) {
+    const modalita = Array.isArray(conto?.modalita) && conto.modalita.length > 0
+        ? conto.modalita
+        : [conto?.modalita_pagamento_legacy];
+    return modalita.some(m => String(m || '').trim().toLowerCase() === 'bonifico');
+}
+
 function formatEuro(value) {
     return Number(value || 0).toFixed(2).replace('.', ',');
 }
@@ -125,7 +137,7 @@ const SocioOrdineController = {
         try {
             const conti = await Conto.findAll({ where: { societa_id: ctx.societaId } });
             const bonifici = conti
-                .filter(c => (c.modalita_pagamento || '').toLowerCase() === 'bonifico')
+                .filter(isContoBonifico)
                 .map(c => ({
                     id: c.id,
                     descrizione: c.descrizione,
@@ -189,7 +201,7 @@ const SocioOrdineController = {
             const conto = await Conto.findByPk(conto_id);
             if (!conto
                 || String(conto.societa_id) !== String(ctx.societaId)
-                || (conto.modalita_pagamento || '').toLowerCase() !== 'bonifico') {
+                || !isContoBonifico(conto)) {
                 return res.status(400).json({ error: 'Metodo di pagamento non valido' });
             }
 
